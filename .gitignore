@@ -27,6 +27,7 @@ dist-ssr
 task_plan.md
 findings.md
 progress.md
+.planning/
 
 # Local package/cache artifacts
 .pnpm-store

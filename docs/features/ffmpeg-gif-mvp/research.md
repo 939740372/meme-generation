@@ -1,6 +1,6 @@
 # 需求调研：FFmpeg GIF MVP
 
-- 状态：proposed
+- 状态：researching
 - Feature slug：ffmpeg-gif-mvp
 - 分支：feature/ffmpeg-gif-mvp
 - 负责人：待定
@@ -25,7 +25,7 @@ Tauri 适合将 Vue 编辑界面与本地 Rust 能力连接起来。FFmpeg 作�
 
 ## 4. 技术调研
 
-需要在编码前确认：
+完整可分发版本仍需要确认：
 
 - FFmpeg 版本、构建目标和 macOS/Windows/Linux sidecar 命名；
 - FFmpeg 构建的 LGPL/GPL/non-free 组合及随应用分发的许可证义务；
@@ -33,6 +33,8 @@ Tauri 适合将 Vue 编辑界面与本地 Rust 能力连接起来。FFmpeg 作�
 - 字体来源、字体文件选择和不同平台的字体差异；
 - sidecar 的签名、打包、更新和失败诊断；
 - 临时文件目录、取消时的子进程终止和残留清理。
+
+本次最小实现先把“本机验证版”和“可分发版本”分开：渲染器从 `PATH` 查找 `ffmpeg` 和 `ffprobe`，允许通过 `FFMPEG_BINARY`、`FFPROBE_BINARY` 指定测试/打包路径，不把未经审核的二进制提交进仓库。这样可以先验证真实的媒体闭环，sidecar 的固定版本、平台命名、签名和许可证审查继续作为发布前任务。
 
 ## 5. 已确认事实
 
@@ -44,7 +46,7 @@ Tauri 适合将 Vue 编辑界面与本地 Rust 能力连接起来。FFmpeg 作�
 
 ## 6. 当前假设
 
-- 第一版采用 FFmpeg CLI sidecar，而不是直接绑定 FFmpeg C API。
+- 产品版目标采用 FFmpeg CLI sidecar，而不是直接绑定 FFmpeg C API；本轮验证版先从 PATH/环境变量读取本机 CLI。
 - 首批支持 macOS、Windows、Linux，但打包和签名验证需要分平台完成。
 - 用户媒体默认只在本地处理，不进入项目仓库或远程服务。
 - 第一版以单视频、单输出任务为主，不做批处理。
@@ -63,11 +65,31 @@ Tauri 适合将 Vue 编辑界面与本地 Rust 能力连接起来。FFmpeg 作�
 | --- | --- | --- |
 | 先实现单视频到 GIF 的 MVP | 先验证完整媒体闭环 | 暂不覆盖批处理和复杂时间线 |
 | 使用结构化 FFmpeg 参数 | 降低路径、文本和命令注入风险 | Rust 需要维护参数构建和校验 |
-| 默认采用 palettegen/paletteuse 流程 | 改善 GIF 颜色表现 | 任务需要临时调色板和更多进度阶段 |
+| 默认采用 palettegen/paletteuse 流程 | 改善 GIF 颜色表现 | 任务需要 filter graph 分支和更多进度阶段 |
 | 将 sidecar、许可证和平台产物作为独立任务 | 这些事项会直接影响可分发性 | 未完成审核前不能宣称可发布 |
+| 本轮优先交付本机 FFmpeg 验证版 | 当前仓库没有已审核的第三方二进制，且用户要求先做最小 MVP | 可在开发机上完成真实导出，但暂不等同于安装包能力 |
+| 将文件选择放进 Tauri dialog plugin | 浏览器 `<input type=file>` 在桌面 WebView 中不稳定地提供真实路径 | Vue 只拿到用户明确选择的文件路径，Rust 负责后续访问 |
 
-## 9. 参考资料和实验记录
+## 9. 本轮 MVP 边界
+
+### 包含
+
+- 单个本地视频的 `ffprobe` 探测；
+- 起止时间、可选矩形裁切、输出宽度和 FPS；
+- 一个文字图层和一个 PNG 图案图层，均为固定位置/尺寸；
+- 单个 FFmpeg 任务，使用 `split + palettegen + paletteuse` 生成循环 GIF；
+- Tauri 事件回传阶段、百分比、完成、失败和取消；
+- 成功后检查输出存在且文件大小大于零，拒绝静默覆盖已有目标。
+
+### 明确后置
+
+- 仓库内 sidecar、签名、自动更新和三平台打包；
+- 可视化时间轴、画布拖拽、多个图层和预览与最终输出的像素级同步；
+- 自定义字体资产、透明 GIF、高级质量预设和批处理。
+
+## 10. 参考资料和实验记录
 
 - FFmpeg 官方文档和具体构建许可证：实现前补充版本化链接。
 - Tauri 2 sidecar 与打包文档：实现前补充版本化链接。
-- 固定短视频样例：实现阶段加入本地测试资产，不提交用户媒体。
+- 固定短视频样例：实现阶段使用系统临时目录生成，不提交用户媒体。
+- 实际 FFmpeg 版本、样例输出属性和平台结果：待实现阶段记录到 implementation.md。
