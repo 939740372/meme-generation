@@ -2,6 +2,17 @@
 
 一个以本地优先为方向的跨平台桌面客户端底座，当前使用 Tauri 2 + Vue 3 + TypeScript + Vite。
 
+## 开发流程
+
+项目按“方向 TODO → feature 文档 → 独立分支 → 实现 → 自测 → 合并 main”推进。
+
+- [AGENTS.md](AGENTS.md)：仓库级开发约束和合并门槛。
+- [TODO.md](TODO.md)：产品大方向、优先级和里程碑。
+- [docs/development-workflow.md](docs/development-workflow.md)：完整开发流程。
+- [docs/features/_template/](docs/features/_template/)：每个 feature 的文档模板。
+
+每个 feature 必须在 docs/features/<feature-slug>/ 下维护 research.md、requirements.md、design.md、implementation.md 和 todo.md，并在功能完成、自测通过后再合并到 main。
+
 ## 当前包含
 
 - Tauri 2 桌面窗口与 src-tauri Rust 工程
