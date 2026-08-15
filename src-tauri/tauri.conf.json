@@ -15,9 +15,11 @@
         "title": "Meme Studio",
         "width": 1280,
         "height": 820,
-        "minWidth": 960,
-        "minHeight": 640,
-        "resizable": true
+        "minWidth": 1280,
+        "minHeight": 820,
+        "maxWidth": 1280,
+        "maxHeight": 820,
+        "resizable": false
       }
     ],
     "security": {

@@ -20,6 +20,14 @@
 | package.json / pnpm-lock.yaml | 增加 dialog JS 包 | 与 Rust dialog plugin 对接 |
 | docs/features/ffmpeg-gif-mvp/ | 持续更新五份文档 | 记录需求、设计、实现和验证 |
 
+本轮 UI refinement 追加：
+
+| 路径 | 变更 | 目的 |
+| --- | --- | --- |
+| src/App.vue | 保留媒体交互模型，配合桌面工作区语义 | 不改变导入、参数、渲染和事件逻辑 |
+| src/styles.css | 重写为固定视口的深色桌面工作台样式 | 消除网页式纵向扩张和滚动条，强化预览/控制/导出层级 |
+| src-tauri/tauri.conf.json | 锁定窗口最小/最大尺寸并关闭缩放 | 保证客户端长宽高固定 |
+
 ### 新增依赖说明
 
 - `@tauri-apps/plugin-dialog` / `tauri-plugin-dialog` `2.7.2`：调用系统打开/保存对话框，许可证为 MIT OR Apache-2.0；会增加少量前端包和原生 Rust 编译时间，不把文件内容上传到网络。
@@ -75,12 +83,25 @@
 | 同一管线叠加 PNG 图案 | 通过；GIF 可被 `ffprobe` 读取，320×180、1.160 秒、125,646 bytes |
 | 文字 `drawtext` | 本机 FFmpeg 9.0 不包含该 filter；已加入渲染前能力检查并返回 `DRAW_TEXT_UNAVAILABLE`，需要带 libfreetype 的构建 |
 
+### UI refinement 验证
+
+- `CI=true pnpm build`：通过；Vue 类型检查和 Vite production build 均通过。
+- `PATH=/Users/ryantorres/.cargo/bin:$PATH cargo check --manifest-path src-tauri/Cargo.toml --locked`：通过。
+- 浏览器固定视口检查：使用本地 Vite 和 `1280 × 820` 视口验证，默认状态以及同时展开裁切/文字字段时，`document`、`body`、`#app` 均为 `1280 × 820`，页面没有水平/垂直外层滚动；右侧控制面板 `scrollWidth/scrollHeight` 与 client 尺寸一致。
+- `CI=true PATH=/Users/ryantorres/.cargo/bin:$PATH pnpm tauri:dev`：通过启动 Vite、编译 Rust 并运行 `target/debug/meme-studio`；Tauri 接受固定窗口配置。当前环境未能通过桌面窗口观察工具读取原生窗口像素，视觉布局以同尺寸浏览器渲染结果复核。
+- 视觉结果：深色石墨工作台、酸性黄主操作色、左侧导航、中央预览、右侧参数和底部导出状态均在同一固定视口内可见；现有媒体交互 DOM 和 script setup 未改动。
+- 字体可读性 refinement：导航、标题、正文、参数输入和状态信息整体放大 1–2px；同步压缩面板留白和控件高度，避免放大后破坏固定视口布局。
+- 放大字体后的固定视口复核：默认状态以及裁切/文字展开状态的 `document`、`body` 均为 `1280 × 820`，控制面板 `scrollHeight === clientHeight`，无可见横向/纵向滚动条。
+
+验证环境：macOS arm64；Rust/Cargo 1.94.1；Node/pnpm；2026-08-15。
+
 ## 6. 已知限制
 
 - 当前实现使用本机 PATH 中的 FFmpeg，不包含可分发 sidecar。
 - 浏览器预览模式可以查看界面，但不能替代 Tauri 的真实文件选择和进程调用。
 - 当前 Homebrew FFmpeg 没有 `drawtext`，文字叠加代码路径已实现但本机无法完成文字输出验收。
 - 没有通过 Computer Use 完成文件选择、取消和成功提示的实际桌面交互；这部分仍需在可访问的 Tauri 窗口中补测。
+- 本轮通过同尺寸浏览器渲染验证固定布局；原生 Tauri 窗口的实际像素截图和拖拽禁用状态未由桌面观察工具独立读取，但配置和开发启动均已通过。
 - GIF 的颜色、尺寸和文件大小之间需要后续通过样例调参。
 - 跨平台打包、签名和许可证审核尚未完成。
 
