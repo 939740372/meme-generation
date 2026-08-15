@@ -44,7 +44,7 @@ const outputWidth = ref(480);
 const fps = ref(12);
 
 const useText = ref(false);
-const text = ref("Meme Studio");
+const text = ref("表情工坊");
 const textX = ref(24);
 const textY = ref(24);
 const textSize = ref(42);
@@ -63,15 +63,15 @@ const canRender = computed(
 );
 const runtimeLabel = computed(() =>
   desktopInfo.value
-    ? `${desktopInfo.value.platform} · Tauri ${desktopInfo.value.version}`
-    : "浏览器预览 · 未连接桌面能力",
+    ? "已连接 Tauri"
+    : "浏览器预览",
 );
 const mediaDuration = computed(() => media.value?.durationSecs ?? 0);
 const mediaDurationLabel = computed(() =>
-  media.value ? `${media.value.durationSecs.toFixed(2)}s` : "—",
+  media.value ? `${media.value.durationSecs.toFixed(2)} 秒` : "—",
 );
 const mediaFpsLabel = computed(() =>
-  media.value?.fps ? `${media.value.fps.toFixed(2)} fps` : "未知 fps",
+  media.value?.fps ? `${media.value.fps.toFixed(2)} 帧/秒` : "未知帧率",
 );
 const statusLabel = computed(() => {
   const labels: Record<TaskStatus, string> = {
@@ -85,6 +85,15 @@ const statusLabel = computed(() => {
   };
   return labels[status.value];
 });
+const renderErrorLabels: Record<string, string> = {
+  FFMPEG_FAILED: "FFmpeg 导出失败，请检查输入文件、参数或 FFmpeg 配置。",
+  PROCESS_STATUS_UNKNOWN: "无法读取 FFmpeg 进程状态。",
+  OUTPUT_INVALID: "FFmpeg 未生成可用的 GIF 文件。",
+  OUTPUT_NOT_READABLE: "导出的 GIF 无法读取。",
+  TASK_NOT_FOUND: "渲染任务不存在或已经结束。",
+  PROCESS_UNAVAILABLE: "无法访问 FFmpeg 进程。",
+  CANCEL_FAILED: "取消 FFmpeg 任务失败。",
+};
 const previewStyle = computed(() => {
   if (!media.value) {
     return {};
@@ -118,6 +127,10 @@ function readableError(error: unknown): string {
     return String(error.message);
   }
   return "操作失败，请检查文件和 FFmpeg 配置后重试。";
+}
+
+function readableRenderError(code: string, message: string): string {
+  return renderErrorLabels[code] ?? (message || "渲染失败，请检查参数后重试。");
 }
 
 function applyMediaDefaults(nextMedia: MediaInfo): void {
@@ -301,7 +314,7 @@ async function connectDesktopEvents(): Promise<void> {
         taskId.value = event.taskId;
         status.value = "failed";
         statusMessage.value = "导出没有完成。";
-        errorMessage.value = event.message;
+        errorMessage.value = readableRenderError(event.code, event.message);
       },
       onCancelled: (event) => {
         if (taskId.value && event.taskId !== taskId.value) {
@@ -338,26 +351,14 @@ onBeforeUnmount(() => {
       <div class="brand-lockup">
         <div class="brand-mark">M</div>
         <div>
-          <strong>Meme Studio</strong>
-          <span>local creator workspace</span>
+          <strong>表情工坊</strong>
         </div>
       </div>
 
-      <div class="sidebar-kicker">MVP / 01</div>
-      <nav class="side-nav" aria-label="Workspace navigation">
+      <nav class="side-nav" aria-label="主导航">
         <a class="side-nav-item active" href="#workspace">
           <span class="nav-icon">✦</span>
-          GIF maker
-          <span class="nav-state">LIVE</span>
-        </a>
-        <a class="side-nav-item muted" href="#notes">
-          <span class="nav-icon">◷</span>
-          Export history
-          <span class="nav-soon">soon</span>
-        </a>
-        <a class="side-nav-item muted" href="#notes">
-          <span class="nav-icon">⌘</span>
-          Shortcuts
+          GIF 制作
         </a>
       </nav>
 
@@ -365,50 +366,39 @@ onBeforeUnmount(() => {
         <div class="runtime-card">
           <span class="runtime-dot" :class="{ offline: !isDesktop }"></span>
           <div>
-            <strong>{{ isDesktop ? "Desktop runtime" : "Preview runtime" }}</strong>
+            <strong>{{ isDesktop ? "桌面端" : "预览" }}</strong>
             <small>{{ runtimeLabel }}</small>
           </div>
         </div>
-        <p class="sidebar-note">
-          Your media stays on this machine. FFmpeg does the heavy lifting locally.
-        </p>
       </div>
     </aside>
 
     <main id="workspace" class="studio-main">
       <header class="topbar">
-        <div class="crumbs"><span>Workspace</span><b>/</b><strong>GIF maker</strong></div>
-        <div class="topbar-meta"><span class="status-mark"></span> local-first · v0.1</div>
+        <div class="topbar-meta"><span class="status-mark"></span>{{ isDesktop ? "桌面端" : "预览" }}</div>
       </header>
 
       <div class="page-content">
         <section class="page-intro">
           <div>
-            <p class="eyebrow">FFMPEG GIF MVP</p>
-            <h1>Turn a moment into a loop.</h1>
-            <p class="intro-copy">
-              Bring in a video, shape the frame, add a little signal, and export a shareable GIF.
-            </p>
+            <h1>制作 GIF</h1>
           </div>
-          <div class="runtime-badge"><span></span>{{ isDesktop ? "Ready to render" : "Desktop mode required" }}</div>
+          <div class="runtime-badge"><span></span>{{ isDesktop ? "桌面端就绪" : "需要 Tauri" }}</div>
         </section>
 
         <div v-if="!isDesktop" class="notice-banner">
           <span class="notice-icon">!</span>
-          <div>
-            <strong>这是浏览器预览。</strong>
-            <span>请运行 <code>pnpm tauri:dev</code>，才能选择本地文件并调用 FFmpeg。</span>
-          </div>
+          <div>需要桌面端 · 运行 <code>pnpm tauri:dev</code> 后才能导入本地文件。</div>
         </div>
 
         <section class="workspace-grid">
           <article class="preview-panel panel-card">
             <div class="panel-heading">
               <div>
-                <p class="eyebrow">Canvas / 01</p>
-                <h2>Output preview</h2>
+                <p class="eyebrow">预览</p>
+                <h2>源画面</h2>
               </div>
-              <span class="panel-chip">GIF · loop 0</span>
+              <span class="panel-chip">GIF</span>
             </div>
 
             <div class="preview-stage" :style="previewStyle">
@@ -423,14 +413,14 @@ onBeforeUnmount(() => {
                   <div v-if="useImage && imagePath" class="preview-sticker" :style="{ left: `${Math.min(imageX / Math.max(media.width, 1) * 100, 80)}%`, top: `${Math.min(imageY / Math.max(media.height, 1) * 100, 80)}%`, width: `${Math.min(imageWidth / Math.max(media.width, 1) * 100, 42)}%` }">
                     PNG
                   </div>
-                  <div class="preview-caption">SOURCE FRAME · {{ media.width }} × {{ media.height }}</div>
+                  <div class="preview-caption">源画面 · {{ media.width }} × {{ media.height }}</div>
                 </div>
                 <div class="play-button" aria-hidden="true">▶</div>
               </template>
               <div v-else class="preview-empty">
                 <div class="empty-mark">✦</div>
-                <strong>Your canvas is waiting.</strong>
-                <span>Choose a video to see its details here.</span>
+                <strong>暂无视频</strong>
+                <span>导入视频后即可预览。</span>
               </div>
             </div>
 
@@ -438,12 +428,12 @@ onBeforeUnmount(() => {
               <div class="media-file">
                 <span class="file-icon">▧</span>
                 <div>
-                  <strong>{{ media?.fileName ?? "No video selected" }}</strong>
-                  <small>{{ media ? `${media.format} · ${media.width} × ${media.height}` : "MP4, MOV, WEBM and more" }}</small>
+                    <strong>{{ media?.fileName ?? "暂无来源" }}</strong>
+                    <small>{{ media ? `${media.format} · ${media.width} × ${media.height}` : "本地视频" }}</small>
                 </div>
               </div>
               <div class="media-stats">
-                <span><b>{{ mediaDurationLabel }}</b> duration</span>
+                <span><b>{{ mediaDurationLabel }}</b> 时长</span>
                 <span><b>{{ mediaFpsLabel }}</b></span>
               </div>
             </div>
@@ -452,8 +442,8 @@ onBeforeUnmount(() => {
           <aside class="controls-panel panel-card">
             <div class="panel-heading compact-heading">
               <div>
-                <p class="eyebrow">Edit / 02</p>
-                <h2>Shape the loop</h2>
+                <p class="eyebrow">编辑</p>
+                <h2>参数</h2>
               </div>
               <span class="step-number">02</span>
             </div>
@@ -461,27 +451,27 @@ onBeforeUnmount(() => {
             <button class="file-picker" type="button" :disabled="isBusy" @click="chooseVideo">
               <span class="picker-icon">↑</span>
               <span>
-                <strong>{{ media ? "Replace video" : "Choose a video" }}</strong>
-                <small>{{ media ? "Pick another local source" : "Start with an MP4, MOV, or WEBM" }}</small>
+                <strong>{{ media ? "替换视频" : "导入视频" }}</strong>
+                <small>{{ media ? "选择其他视频" : "MP4 · MOV · WEBM" }}</small>
               </span>
               <span class="picker-arrow">→</span>
             </button>
 
             <div class="control-section">
-              <div class="section-label"><span>01</span> Timing</div>
+              <div class="section-label"><span>01</span> 时间</div>
               <div class="field-grid two-up">
-                <label class="field"><span>Start · sec</span><input v-model.number="startSecs" type="number" min="0" step="0.1" /></label>
-                <label class="field"><span>End · sec</span><input v-model.number="endSecs" type="number" min="0.1" step="0.1" :max="mediaDuration || undefined" /></label>
+                <label class="field"><span>开始 · 秒</span><input v-model.number="startSecs" type="number" min="0" step="0.1" /></label>
+                <label class="field"><span>结束 · 秒</span><input v-model.number="endSecs" type="number" min="0.1" step="0.1" :max="mediaDuration || undefined" /></label>
               </div>
             </div>
 
             <div class="control-section">
-              <div class="section-label"><span>02</span> Frame & motion</div>
+              <div class="section-label"><span>02</span> 输出</div>
               <div class="field-grid two-up">
-                <label class="field"><span>Width · px</span><input v-model.number="outputWidth" type="number" min="32" max="1920" step="1" /></label>
-                <label class="field"><span>Frame rate</span><input v-model.number="fps" type="number" min="1" max="60" step="1" /></label>
+                <label class="field"><span>宽度 · 像素</span><input v-model.number="outputWidth" type="number" min="32" max="1920" step="1" /></label>
+                <label class="field"><span>帧率</span><input v-model.number="fps" type="number" min="1" max="60" step="1" /></label>
               </div>
-              <label class="toggle-row"><input v-model="useCrop" type="checkbox" /><span class="toggle-ui"></span><span>Use crop rectangle</span><em>optional</em></label>
+              <label class="toggle-row"><input v-model="useCrop" type="checkbox" /><span class="toggle-ui"></span><span>裁切</span></label>
               <div v-if="useCrop" class="field-grid four-up crop-grid">
                 <label class="field"><span>X</span><input v-model.number="crop.x" type="number" min="0" step="1" /></label>
                 <label class="field"><span>Y</span><input v-model.number="crop.y" type="number" min="0" step="1" /></label>
@@ -491,23 +481,23 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="control-section">
-              <div class="section-label"><span>03</span> Overlays</div>
-              <label class="toggle-row"><input v-model="useText" type="checkbox" /><span class="toggle-ui"></span><span>Text overlay</span><em>drawtext</em></label>
+              <div class="section-label"><span>03</span> 叠加</div>
+              <label class="toggle-row"><input v-model="useText" type="checkbox" /><span class="toggle-ui"></span><span>文字</span></label>
               <div v-if="useText" class="overlay-fields">
-                <label class="field field-wide"><span>Message</span><input v-model="text" type="text" maxlength="80" placeholder="Add a caption" /></label>
+                <label class="field field-wide"><span>内容</span><input v-model="text" type="text" maxlength="80" placeholder="输入文字" /></label>
                 <div class="field-grid four-up">
                   <label class="field"><span>X</span><input v-model.number="textX" type="number" min="0" step="1" /></label>
                   <label class="field"><span>Y</span><input v-model.number="textY" type="number" min="0" step="1" /></label>
-                  <label class="field"><span>Size</span><input v-model.number="textSize" type="number" min="8" max="192" step="1" /></label>
-                  <label class="field color-field"><span>Color</span><input v-model="textColor" type="color" /></label>
+                  <label class="field"><span>字号</span><input v-model.number="textSize" type="number" min="8" max="192" step="1" /></label>
+                  <label class="field color-field"><span>颜色</span><input v-model="textColor" type="color" /></label>
                 </div>
               </div>
               <div class="toggle-row image-row">
-                <label class="toggle-label"><input v-model="useImage" type="checkbox" /><span class="toggle-ui"></span><span>PNG graphic</span></label>
-                <button class="inline-button" type="button" @click="chooseImage">{{ imagePath ? "Replace" : "Choose PNG" }}</button>
+                <label class="toggle-label"><input v-model="useImage" type="checkbox" /><span class="toggle-ui"></span><span>PNG 图案</span></label>
+                <button class="inline-button" type="button" @click="chooseImage">{{ imagePath ? "替换" : "选择 PNG" }}</button>
               </div>
               <div v-if="useImage && imagePath" class="overlay-fields">
-                <div class="selected-file"><span>PNG</span><strong>{{ imagePath.split(/[\\/]/).pop() }}</strong><button type="button" aria-label="Remove PNG" @click="clearImage">×</button></div>
+                <div class="selected-file"><span>PNG</span><strong>{{ imagePath.split(/[\\/]/).pop() }}</strong><button type="button" aria-label="移除 PNG" @click="clearImage">×</button></div>
                 <div class="field-grid three-up">
                   <label class="field"><span>X</span><input v-model.number="imageX" type="number" min="0" step="1" /></label>
                   <label class="field"><span>Y</span><input v-model.number="imageY" type="number" min="0" step="1" /></label>
@@ -517,10 +507,10 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="control-section output-section">
-              <div class="section-label"><span>04</span> Destination</div>
+              <div class="section-label"><span>04</span> 保存到</div>
               <div class="output-path-row">
-                <input v-model="outputPath" type="text" placeholder="Choose a .gif output path" />
-                <button type="button" aria-label="Choose output path" @click="chooseOutput">…</button>
+                <input v-model="outputPath" type="text" placeholder="GIF 输出路径" />
+                <button type="button" aria-label="选择输出路径" @click="chooseOutput">…</button>
               </div>
             </div>
           </aside>
@@ -530,7 +520,6 @@ onBeforeUnmount(() => {
           <div class="export-status">
             <div class="status-icon" :class="`status-${status}`"><span>{{ status === "completed" ? "✓" : status === "failed" ? "!" : "✦" }}</span></div>
             <div>
-              <p class="eyebrow">Export / 03</p>
               <strong>{{ statusLabel }}</strong>
               <span>{{ errorMessage || statusMessage }}</span>
             </div>
@@ -541,17 +530,13 @@ onBeforeUnmount(() => {
           </div>
           <div class="export-actions">
             <span v-if="status === 'completed'" class="output-size">{{ (outputBytes / 1024).toFixed(1) }} KB</span>
-            <button v-if="isBusy" class="secondary-action danger" type="button" @click="stopRender">Cancel</button>
+            <button v-if="isBusy" class="secondary-action danger" type="button" @click="stopRender">取消</button>
             <button v-else class="primary-action" type="button" :disabled="!canRender || !isDesktop" @click="startRender">
-              {{ status === "completed" ? "Export another" : "Export GIF" }} <span>↗</span>
+              {{ status === "completed" ? "再次导出" : "导出 GIF" }} <span>↗</span>
             </button>
           </div>
         </section>
 
-        <footer id="notes" class="page-footer">
-          <span>Meme Studio / FFmpeg GIF MVP</span>
-          <span>Local files stay local · palettegen + paletteuse</span>
-        </footer>
       </div>
     </main>
   </div>

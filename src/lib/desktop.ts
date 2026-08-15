@@ -103,7 +103,7 @@ export async function getDesktopInfo(): Promise<DesktopInfo | null> {
 
 export async function greetCreator(name: string): Promise<string> {
   if (!isDesktopRuntime()) {
-    return "Welcome back, " + name + ".";
+    return "欢迎回来，" + name + "。";
   }
 
   return invoke<string>("greet", { name });
@@ -117,7 +117,7 @@ export async function pickVideo(): Promise<string | null> {
     directory: false,
     filters: [
       {
-        name: "Video",
+        name: "视频",
         extensions: ["mp4", "mov", "mkv", "webm", "avi", "m4v"],
       },
     ],
@@ -132,7 +132,7 @@ export async function pickPng(): Promise<string | null> {
   const selected = await open({
     multiple: false,
     directory: false,
-    filters: [{ name: "PNG image", extensions: ["png"] }],
+    filters: [{ name: "PNG 图案", extensions: ["png"] }],
   });
 
   return typeof selected === "string" ? selected : null;
@@ -143,7 +143,7 @@ export async function pickGifOutput(defaultPath?: string): Promise<string | null
 
   return save({
     defaultPath,
-    filters: [{ name: "GIF image", extensions: ["gif"] }],
+    filters: [{ name: "GIF 动图", extensions: ["gif"] }],
   });
 }
 

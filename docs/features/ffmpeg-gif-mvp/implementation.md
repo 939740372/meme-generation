@@ -25,6 +25,7 @@
 | 路径 | 变更 | 目的 |
 | --- | --- | --- |
 | src/App.vue | 保留媒体交互模型，配合桌面工作区语义 | 不改变导入、参数、渲染和事件逻辑 |
+| src/lib/desktop.ts / src-tauri/src/lib.rs | 汉化系统文件筛选、运行时欢迎语和桌面错误兜底 | 让第一版 Tauri 文件选择和备用命令返回也保持简体中文 |
 | src/styles.css | 重写为固定视口的深色桌面工作台样式 | 消除网页式纵向扩张和滚动条，强化预览/控制/导出层级 |
 | src-tauri/tauri.conf.json | 锁定窗口最小/最大尺寸并关闭缩放 | 保证客户端长宽高固定 |
 
@@ -89,9 +90,12 @@
 - `PATH=/Users/ryantorres/.cargo/bin:$PATH cargo check --manifest-path src-tauri/Cargo.toml --locked`：通过。
 - 浏览器固定视口检查：使用本地 Vite 和 `1280 × 820` 视口验证，默认状态以及同时展开裁切/文字字段时，`document`、`body`、`#app` 均为 `1280 × 820`，页面没有水平/垂直外层滚动；右侧控制面板 `scrollWidth/scrollHeight` 与 client 尺寸一致。
 - `CI=true PATH=/Users/ryantorres/.cargo/bin:$PATH pnpm tauri:dev`：通过启动 Vite、编译 Rust 并运行 `target/debug/meme-studio`；Tauri 接受固定窗口配置。当前环境未能通过桌面窗口观察工具读取原生窗口像素，视觉布局以同尺寸浏览器渲染结果复核。
-- 视觉结果：深色石墨工作台、酸性黄主操作色、左侧导航、中央预览、右侧参数和底部导出状态均在同一固定视口内可见；现有媒体交互 DOM 和 script setup 未改动。
-- 字体可读性 refinement：导航、标题、正文、参数输入和状态信息整体放大 1–2px；同步压缩面板留白和控件高度，避免放大后破坏固定视口布局。
-- 放大字体后的固定视口复核：默认状态以及裁切/文字展开状态的 `document`、`body` 均为 `1280 × 820`，控制面板 `scrollHeight === clientHeight`，无可见横向/纵向滚动条。
+- 视觉结果：深色石墨工作台、酸性黄主操作色、左侧导航、中央预览、右侧参数和底部导出状态均在同一固定视口内可见；现有媒体交互模型和 script setup 未改动，仅调整模板文案与布局样式。
+- 字体可读性 refinement：移除未实现入口、重复工作区标题和多行提示；导航使用 18px，正文/控件使用 14–16px，参数输入使用 17px，较上一版主要可读文字达到至少 50% 放大目标。
+- 放大字体后的固定视口复核：在 `1280 × 820` 视口依次验证默认、仅裁切、裁切+文字三种状态；`html`、`body`、`#app` 和工作区均无横向/纵向溢出，控制面板 `scrollHeight === clientHeight`，保存路径和底部导出栏完整可见。
+- 简体中文 localization：翻译模板、状态、错误兜底、文件筛选和导出/叠加控件；保留 FFmpeg、GIF、PNG、Tauri、FPS 等技术名词。
+- 错误路径 localization：前端按渲染错误码显示简体中文摘要，避免直接把 FFmpeg 的英文 stderr 作为主要界面文案。
+- 简体中文固定视口复核：默认态和裁切+文字展开态均无中文换行溢出、内容裁切或滚动条；原生 `pnpm tauri:dev` 启动、Vite 编译和 Rust 编译通过。
 
 验证环境：macOS arm64；Rust/Cargo 1.94.1；Node/pnpm；2026-08-15。
 

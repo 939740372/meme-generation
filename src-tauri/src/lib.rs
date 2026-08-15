@@ -34,7 +34,7 @@ fn app_error(code: &str, message: impl Into<String>) -> AppError {
 
 #[tauri::command]
 fn greet(name: &str) -> String {
-    format!("Welcome back, {}.", name)
+    format!("欢迎回来，{}。", name)
 }
 
 #[derive(Debug, Serialize)]
