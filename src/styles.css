@@ -2124,3 +2124,244 @@ code {
 .drawer-slide-leave-to .history-drawer-panel {
   transform: translateY(100%);
 }
+
+/* ==========================================================================
+   可视化矩形裁切框与九宫格遮罩交互层
+   ========================================================================== */
+.crop-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 23px;
+  gap: 8px;
+}
+
+.crop-quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.crop-mini-btn {
+  padding: 2px 6px;
+  color: var(--cyan);
+  font-family: var(--mono);
+  font-size: 11px;
+  border: 1px solid rgba(117, 216, 244, 0.22);
+  border-radius: 3px;
+  background: rgba(117, 216, 244, 0.05);
+  transition: 120ms ease;
+  white-space: nowrap;
+}
+
+.crop-mini-btn:hover {
+  color: #fff;
+  border-color: rgba(117, 216, 244, 0.55);
+  background: rgba(117, 216, 244, 0.16);
+}
+
+.crop-box {
+  position: absolute;
+  box-sizing: border-box;
+  cursor: move;
+  border: 1.5px solid var(--accent);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.65);
+  z-index: 30;
+  user-select: none;
+  touch-action: none;
+}
+
+.crop-box:hover {
+  border-color: #f5ffb0;
+}
+
+.crop-box.is-dragging {
+  cursor: move !important;
+  border-color: #fff !important;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.72), 0 0 10px rgba(215, 244, 106, 0.35);
+}
+
+/* 九宫格三分参考线 */
+.crop-grid-lines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.crop-line {
+  position: absolute;
+  pointer-events: none;
+}
+
+.line-h-1 {
+  top: 33.33%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.32);
+}
+
+.line-h-2 {
+  top: 66.66%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.32);
+}
+
+.line-v-1 {
+  left: 33.33%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  border-left: 1px dashed rgba(255, 255, 255, 0.32);
+}
+
+.line-v-2 {
+  left: 66.66%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  border-left: 1px dashed rgba(255, 255, 255, 0.32);
+}
+
+/* 8 个方向拉伸调节手柄 */
+.crop-handle {
+  position: absolute;
+  box-sizing: border-box;
+  background: var(--accent);
+  border: 1.5px solid #0b0e12;
+  z-index: 35;
+  transition: transform 100ms ease, background 100ms ease;
+}
+
+.crop-handle:hover {
+  background: #fff;
+  transform: scale(1.35);
+}
+
+/* 4 角手柄 */
+.handle-nw {
+  top: -5px;
+  left: -5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  cursor: nwse-resize;
+}
+
+.handle-ne {
+  top: -5px;
+  right: -5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  cursor: nesw-resize;
+}
+
+.handle-se {
+  bottom: -5px;
+  right: -5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  cursor: nwse-resize;
+}
+
+.handle-sw {
+  bottom: -5px;
+  left: -5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  cursor: nesw-resize;
+}
+
+/* 4 边手柄 */
+.handle-n {
+  top: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 6px;
+  border-radius: 99px;
+  cursor: ns-resize;
+}
+
+.handle-n:hover {
+  transform: translateX(-50%) scaleY(1.5);
+}
+
+.handle-s {
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 6px;
+  border-radius: 99px;
+  cursor: ns-resize;
+}
+
+.handle-s:hover {
+  transform: translateX(-50%) scaleY(1.5);
+}
+
+.handle-w {
+  left: -4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 20px;
+  border-radius: 99px;
+  cursor: ew-resize;
+}
+
+.handle-w:hover {
+  transform: translateY(-50%) scaleX(1.5);
+}
+
+.handle-e {
+  right: -4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 20px;
+  border-radius: 99px;
+  cursor: ew-resize;
+}
+
+.handle-e:hover {
+  transform: translateY(-50%) scaleX(1.5);
+}
+
+/* 实时尺寸与坐标指示标签 */
+.crop-dimension-pill {
+  position: absolute;
+  top: -26px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(11, 14, 18, 0.9);
+  border: 1px solid rgba(215, 244, 106, 0.35);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--accent);
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 40;
+}
+
+.crop-dimension-pill.pill-inside {
+  top: 6px;
+}
+
+.crop-dimension-pill small {
+  color: var(--muted);
+  font-size: 9px;
+}

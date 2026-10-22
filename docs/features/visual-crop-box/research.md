@@ -1,6 +1,6 @@
 # 需求调研：可视化矩形裁切框与画布交互
 
-- 状态：designed
+- 状态：ready-to-merge
 - Feature slug: visual-crop-box
 - 分支：feature/visual-crop-box
 - 负责人：待定
