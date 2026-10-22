@@ -1,6 +1,6 @@
 # 视频导入与画面实时预览任务清单 (TODO)
 
-## 状态：ready-to-merge
+## 状态：merged
 
 - [x] Step 1: 在 `src-tauri/tauri.conf.json` 配置 `assetProtocol: { enable: true, scope: ["**"] }`
 - [x] Step 2: 在 `src-tauri/src/lib.rs` 实现 `extract_video_frame` 命令并编写单元测试
