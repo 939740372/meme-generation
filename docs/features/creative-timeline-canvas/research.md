@@ -1,6 +1,6 @@
 # 需求调研：可视化时间轴与画布拖拽创作工作区
 
-- 状态：researching
+- 状态：ready-to-merge
 - Feature slug：creative-timeline-canvas
 - 分支：feature/creative-timeline-canvas
 - 负责人：待定
