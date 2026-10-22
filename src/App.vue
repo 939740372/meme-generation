@@ -32,6 +32,14 @@ import {
   type MemeTemplate,
   type StudioDraft,
 } from "./lib/templates";
+import {
+  createQueueItem,
+  deserializeQueue,
+  getQueueStatusBadge,
+  QUEUE_STORAGE_KEY,
+  serializeQueue,
+  type QueueItem,
+} from "./lib/queue";
 
 type TaskStatus =
   | "idle"
@@ -55,11 +63,31 @@ const taskId = ref<string | null>(null);
 const outputBytes = ref(0);
 const stopListening = ref<(() => void) | null>(null);
 
-const drawerTab = ref<"history" | "templates" | "stickers">("history");
+const drawerTab = ref<"history" | "templates" | "stickers" | "queue">("history");
 const customTemplates = ref<MemeTemplate[]>([]);
 const isSaveTemplateModalOpen = ref(false);
 const newTemplateName = ref("");
 const templateNameInputRef = ref<HTMLInputElement | null>(null);
+
+// 队列调度状态
+const queueItems = ref<QueueItem[]>([]);
+const isQueueRunning = ref(false);
+const activeQueueItemId = ref<string | null>(null);
+const queueTaskId = ref<string | null>(null);
+
+const pendingQueueCount = computed(
+  () => queueItems.value.filter((i) => i.status === "pending").length
+);
+const renderingQueueCount = computed(
+  () => queueItems.value.filter((i) => i.status === "rendering").length
+);
+const completedQueueCount = computed(
+  () => queueItems.value.filter((i) => i.status === "completed").length
+);
+const failedQueueCount = computed(
+  () => queueItems.value.filter((i) => i.status === "failed").length
+);
+const hasPendingQueueItems = computed(() => pendingQueueCount.value > 0);
 
 const builtinStickers = ref<BuiltinSticker[]>([]);
 const selectedStickerCategory = ref<"all" | "classic" | "emotion" | "bubble">("all");
@@ -1243,6 +1271,16 @@ async function connectDesktopEvents(): Promise<void> {
   try {
     stopListening.value = await listenForRenderEvents({
       onProgress: (event) => {
+        // 队列任务事件
+        if (queueTaskId.value && event.taskId === queueTaskId.value) {
+          const item = queueItems.value.find((i) => i.id === activeQueueItemId.value);
+          if (item) {
+            item.progress = event.progress;
+            item.stageMessage = event.message;
+          }
+          return;
+        }
+
         if (taskId.value && event.taskId !== taskId.value) {
           return;
         }
@@ -1252,6 +1290,26 @@ async function connectDesktopEvents(): Promise<void> {
         statusMessage.value = event.message;
       },
       onCompleted: async (event) => {
+        // 队列任务事件
+        if (queueTaskId.value && event.taskId === queueTaskId.value) {
+          const item = queueItems.value.find((i) => i.id === activeQueueItemId.value);
+          if (item) {
+            item.status = "completed";
+            item.progress = 100;
+            item.outputBytes = event.outputBytes;
+            item.outputPath = event.outputPath;
+            item.stageMessage = "已完成导出";
+            saveQueueToStorage();
+            await addHistoryRecord(event.outputPath, event.outputBytes);
+          }
+          queueTaskId.value = null;
+          activeQueueItemId.value = null;
+          if (isQueueRunning.value) {
+            setTimeout(runQueueScheduler, 250);
+          }
+          return;
+        }
+
         if (taskId.value && event.taskId !== taskId.value) {
           return;
         }
@@ -1260,10 +1318,27 @@ async function connectDesktopEvents(): Promise<void> {
         progress.value = 100;
         outputBytes.value = event.outputBytes;
         outputPath.value = event.outputPath;
-        statusMessage.value = "GIF 已导出，可以打开文件查看。";
+        statusMessage.value = `${exportFormat.value === "webp" ? "WebP" : "GIF"} 已导出，可以打开文件查看。`;
         await addHistoryRecord(event.outputPath, event.outputBytes);
       },
       onFailed: (event) => {
+        // 队列任务事件
+        if (queueTaskId.value && event.taskId === queueTaskId.value) {
+          const item = queueItems.value.find((i) => i.id === activeQueueItemId.value);
+          if (item) {
+            item.status = "failed";
+            item.stageMessage = "转码失败";
+            item.errorMessage = readableRenderError(event.code, event.message);
+            saveQueueToStorage();
+          }
+          queueTaskId.value = null;
+          activeQueueItemId.value = null;
+          if (isQueueRunning.value) {
+            setTimeout(runQueueScheduler, 250);
+          }
+          return;
+        }
+
         if (taskId.value && event.taskId !== taskId.value) {
           return;
         }
@@ -1273,6 +1348,22 @@ async function connectDesktopEvents(): Promise<void> {
         errorMessage.value = readableRenderError(event.code, event.message);
       },
       onCancelled: (event) => {
+        // 队列任务事件
+        if (queueTaskId.value && event.taskId === queueTaskId.value) {
+          const item = queueItems.value.find((i) => i.id === activeQueueItemId.value);
+          if (item) {
+            item.status = "cancelled";
+            item.stageMessage = "已取消";
+            saveQueueToStorage();
+          }
+          queueTaskId.value = null;
+          activeQueueItemId.value = null;
+          if (isQueueRunning.value) {
+            setTimeout(runQueueScheduler, 250);
+          }
+          return;
+        }
+
         if (taskId.value && event.taskId !== taskId.value) {
           return;
         }
@@ -1285,6 +1376,179 @@ async function connectDesktopEvents(): Promise<void> {
   } catch (error) {
     errorMessage.value = readableError(error);
   }
+}
+
+// 队列数据持久化与调度逻辑
+function saveQueueToStorage(): void {
+  try {
+    localStorage.setItem(QUEUE_STORAGE_KEY, serializeQueue(queueItems.value));
+  } catch {
+    // ignore
+  }
+}
+
+function loadQueueFromStorage(): void {
+  try {
+    const raw = localStorage.getItem(QUEUE_STORAGE_KEY);
+    if (!raw) return;
+    queueItems.value = deserializeQueue(raw);
+  } catch {
+    // ignore
+  }
+}
+
+function addToQueue(): void {
+  if (!canRender.value) {
+    showToast("请先选择视频并配置有效导出参数");
+    return;
+  }
+  const plan = buildRenderPlan();
+  const inputFileName = media.value?.path.split(/[\\/]/).pop() || "clip";
+  const existingPaths = new Set(queueItems.value.map((i) => i.outputPath));
+  const newItem = createQueueItem(plan, inputFileName, existingPaths);
+  queueItems.value.push(newItem);
+  saveQueueToStorage();
+  showToast(`已加入导出队列 (第 ${queueItems.value.length} 个任务)`);
+}
+
+function openQueueDrawer(): void {
+  drawerTab.value = "queue";
+  isDrawerOpen.value = true;
+}
+
+async function startBatchQueue(): Promise<void> {
+  if (!isDesktop.value) {
+    showToast("请在桌面模式下使用批量导出");
+    return;
+  }
+  if (status.value === "rendering") {
+    showToast("当前已有单个任务正在转码，请稍候");
+    return;
+  }
+  if (!hasPendingQueueItems.value) {
+    showToast("队列中没有待处理任务");
+    return;
+  }
+  isQueueRunning.value = true;
+  showToast(`开始批量转码，共 ${pendingQueueCount.value} 个待处理任务`);
+  await runQueueScheduler();
+}
+
+async function pauseBatchQueue(): Promise<void> {
+  isQueueRunning.value = false;
+  showToast("已暂停队列批量转码");
+  if (queueTaskId.value) {
+    try {
+      await cancelRender(queueTaskId.value);
+    } catch {
+      // ignore
+    }
+  }
+}
+
+async function runQueueScheduler(): Promise<void> {
+  if (!isQueueRunning.value) {
+    return;
+  }
+  if (activeQueueItemId.value) {
+    return;
+  }
+
+  const nextItem = queueItems.value.find((i) => i.status === "pending");
+  if (!nextItem) {
+    isQueueRunning.value = false;
+    activeQueueItemId.value = null;
+    queueTaskId.value = null;
+    showToast("🎉 批量导出任务已全部完成！");
+    return;
+  }
+
+  nextItem.status = "rendering";
+  nextItem.progress = 0;
+  nextItem.stageMessage = "正在启动 FFmpeg…";
+  nextItem.errorMessage = undefined;
+  activeQueueItemId.value = nextItem.id;
+  saveQueueToStorage();
+
+  try {
+    const tid = await renderGif(nextItem.plan);
+    queueTaskId.value = tid;
+  } catch (error) {
+    nextItem.status = "failed";
+    nextItem.stageMessage = "启动失败";
+    nextItem.errorMessage = readableError(error);
+    activeQueueItemId.value = null;
+    queueTaskId.value = null;
+    saveQueueToStorage();
+    if (isQueueRunning.value) {
+      setTimeout(runQueueScheduler, 300);
+    }
+  }
+}
+
+function retryQueueItem(id: string): void {
+  const item = queueItems.value.find((i) => i.id === id);
+  if (!item) return;
+  item.status = "pending";
+  item.progress = 0;
+  item.errorMessage = undefined;
+  item.stageMessage = "等待开始";
+  saveQueueToStorage();
+  showToast(`已将「${item.title}」重置为待处理`);
+  if (isQueueRunning.value && !activeQueueItemId.value) {
+    runQueueScheduler();
+  }
+}
+
+async function removeQueueItem(id: string): Promise<void> {
+  if (activeQueueItemId.value === id && queueTaskId.value) {
+    try {
+      await cancelRender(queueTaskId.value);
+    } catch {
+      // ignore
+    }
+    activeQueueItemId.value = null;
+    queueTaskId.value = null;
+  }
+  queueItems.value = queueItems.value.filter((i) => i.id !== id);
+  saveQueueToStorage();
+  showToast("已从队列移除");
+  if (isQueueRunning.value && !activeQueueItemId.value) {
+    setTimeout(runQueueScheduler, 200);
+  }
+}
+
+function clearCompletedQueue(): void {
+  queueItems.value = queueItems.value.filter((i) => i.status !== "completed");
+  saveQueueToStorage();
+  showToast("已清空已完成队列项");
+}
+
+async function clearAllQueue(): Promise<void> {
+  if (queueTaskId.value) {
+    try {
+      await cancelRender(queueTaskId.value);
+    } catch {
+      // ignore
+    }
+  }
+  isQueueRunning.value = false;
+  activeQueueItemId.value = null;
+  queueTaskId.value = null;
+  queueItems.value = [];
+  saveQueueToStorage();
+  showToast("已清空全部队列");
+}
+
+async function loadQueuePlan(item: QueueItem): Promise<void> {
+  await loadHistoryPlan({
+    id: item.id,
+    fileName: item.outputPath.split(/[\\/]/).pop() || "clip",
+    filePath: item.outputPath,
+    outputBytes: item.outputBytes || 0,
+    timestamp: item.createdAt,
+    plan: item.plan,
+  });
 }
 
 // 模板相关操作
@@ -1625,6 +1889,7 @@ onMounted(async () => {
   try {
     loadTemplates();
     loadHistoryFromStorage();
+    loadQueueFromStorage();
     builtinStickers.value = await getBuiltinStickers();
     window.addEventListener("keydown", handleKeydown);
     desktopInfo.value = await getDesktopInfo();
@@ -2247,6 +2512,26 @@ onBeforeUnmount(() => {
               </button>
             </template>
             <button
+              class="secondary-action queue-add-btn"
+              type="button"
+              :disabled="!canRender || !isDesktop"
+              title="将当前片段与文字效果加入批量导出队列"
+              @click="addToQueue"
+            >
+              ＋ 加入队列
+            </button>
+            <button
+              v-if="queueItems.length > 0"
+              class="secondary-action queue-dock-btn"
+              :class="{ 'queue-active': isQueueRunning }"
+              type="button"
+              :title="isQueueRunning ? '批量队列正在运行中，点击查看' : '查看导出队列'"
+              @click="openQueueDrawer"
+            >
+              <span v-if="isQueueRunning" class="queue-pulse-dot"></span>
+              📋 队列 ({{ pendingQueueCount > 0 ? `${pendingQueueCount} 待处理` : queueItems.length }})
+            </button>
+            <button
               v-if="historyList.length > 0"
               class="secondary-action"
               type="button"
@@ -2298,6 +2583,16 @@ onBeforeUnmount(() => {
                     <span>🎨 贴纸素材</span>
                     <span class="drawer-count-chip">{{ builtinStickers.length }}</span>
                   </button>
+                  <button
+                    type="button"
+                    class="drawer-tab"
+                    :class="{ active: drawerTab === 'queue' }"
+                    @click="drawerTab = 'queue'"
+                  >
+                    <span v-if="isQueueRunning" class="queue-tab-indicator"></span>
+                    <span>📋 导出队列</span>
+                    <span class="drawer-count-chip" :class="{ 'chip-active': isQueueRunning }">{{ queueItems.length }}</span>
+                  </button>
                 </div>
               </div>
               <div class="drawer-header-right">
@@ -2323,6 +2618,42 @@ onBeforeUnmount(() => {
                 </template>
                 <template v-else-if="drawerTab === 'stickers'">
                   <span class="drawer-stickers-tip">透明免抠图 · 点击一键置入画布</span>
+                </template>
+                <template v-else-if="drawerTab === 'queue'">
+                  <button
+                    v-if="!isQueueRunning && hasPendingQueueItems"
+                    type="button"
+                    class="drawer-queue-start-btn"
+                    title="依序串行转码所有排队任务"
+                    @click="startBatchQueue"
+                  >
+                    ▶ 开始批量导出 ({{ pendingQueueCount }})
+                  </button>
+                  <button
+                    v-else-if="isQueueRunning"
+                    type="button"
+                    class="drawer-queue-pause-btn"
+                    title="暂停队列转码"
+                    @click="pauseBatchQueue"
+                  >
+                    ⏸ 暂停队列
+                  </button>
+                  <button
+                    v-if="completedQueueCount > 0"
+                    type="button"
+                    class="drawer-clear-btn"
+                    @click="clearCompletedQueue"
+                  >
+                    清空已完成
+                  </button>
+                  <button
+                    v-if="queueItems.length > 0"
+                    type="button"
+                    class="drawer-clear-btn danger-hover"
+                    @click="clearAllQueue"
+                  >
+                    清空全部
+                  </button>
                 </template>
                 <button
                   type="button"
@@ -2525,6 +2856,115 @@ onBeforeUnmount(() => {
                     <strong class="sticker-card-name">{{ stk.name }}</strong>
                     <span class="sticker-card-cat">{{ getCategoryLabel(stk.category) }}</span>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tab 4: 导出任务队列 -->
+            <div v-else-if="drawerTab === 'queue'" class="drawer-tab-content queue-tab-content">
+              <div v-if="queueItems.length > 0" class="queue-summary-bar">
+                <div class="queue-summary-stats">
+                  <span>总计 <strong>{{ queueItems.length }}</strong> 个任务</span>
+                  <span class="stat-pending">⏳ 待处理 {{ pendingQueueCount }}</span>
+                  <span v-if="renderingQueueCount > 0" class="stat-rendering">⚙️ 转码中 {{ renderingQueueCount }}</span>
+                  <span class="stat-completed">✓ 已完成 {{ completedQueueCount }}</span>
+                  <span v-if="failedQueueCount > 0" class="stat-failed">✗ 失败 {{ failedQueueCount }}</span>
+                </div>
+                <div class="queue-summary-tip">串行调度 · 防止卡顿 · 防同名自动递增</div>
+              </div>
+
+              <div v-if="queueItems.length > 0" class="drawer-cards-strip queue-cards-strip">
+                <div
+                  v-for="item in queueItems"
+                  :key="item.id"
+                  class="drawer-card queue-card"
+                  :class="[`card-status-${item.status}`, { 'is-active': item.id === activeQueueItemId }]"
+                >
+                  <div class="queue-card-top">
+                    <div class="queue-card-title-row">
+                      <strong class="queue-card-title" :title="item.title">{{ item.title }}</strong>
+                      <div class="queue-badges">
+                        <span class="format-badge" :class="item.format">{{ item.format.toUpperCase() }}</span>
+                        <span class="queue-status-chip" :class="getQueueStatusBadge(item.status).badgeClass">
+                          {{ getQueueStatusBadge(item.status).icon }} {{ getQueueStatusBadge(item.status).label }}
+                        </span>
+                      </div>
+                    </div>
+                    <div class="queue-card-sub">
+                      <span class="queue-time-range">{{ item.timeRangeLabel }}</span>
+                      <span v-if="item.outputBytes" class="queue-file-size">{{ formatBytes(item.outputBytes) }}</span>
+                      <span v-else class="queue-dest-name">{{ item.outputPath.split(/[\\/]/).pop() }}</span>
+                    </div>
+                  </div>
+
+                  <!-- 进度指示 -->
+                  <div v-if="item.status === 'rendering' || item.status === 'completed'" class="queue-progress-track">
+                    <div class="queue-progress-fill" :style="{ width: `${item.progress}%` }"></div>
+                  </div>
+
+                  <!-- 阶段信息 / 错误信息 -->
+                  <div class="queue-card-msg-row">
+                    <span class="queue-card-msg" :class="{ 'msg-error': item.status === 'failed' }">
+                      {{ item.errorMessage || item.stageMessage || (item.status === 'pending' ? '排队等待转码' : '') }}
+                    </span>
+                    <span v-if="item.status === 'rendering'" class="queue-percent-text">{{ Math.round(item.progress) }}%</span>
+                  </div>
+
+                  <!-- 操作按钮栏 -->
+                  <div class="queue-card-actions">
+                    <template v-if="item.status === 'completed'">
+                      <button
+                        class="card-btn"
+                        type="button"
+                        title="在访达/资源管理器中查看"
+                        @click="revealExportFile(item.outputPath)"
+                      >
+                        访达 ↗
+                      </button>
+                      <button
+                        class="card-btn"
+                        type="button"
+                        title="复制文件到剪贴板"
+                        @click="copyExportFile(item.outputPath)"
+                      >
+                        复制 📋
+                      </button>
+                    </template>
+                    <template v-else-if="item.status === 'failed' || item.status === 'cancelled'">
+                      <button
+                        class="card-btn highlight-btn"
+                        type="button"
+                        title="重新加入待处理并执行"
+                        @click="retryQueueItem(item.id)"
+                      >
+                        重试 ↻
+                      </button>
+                    </template>
+                    <button
+                      class="card-btn"
+                      type="button"
+                      title="将此任务的所有参数恢复到当前画布与面板"
+                      @click="loadQueuePlan(item)"
+                    >
+                      恢复参数 ↺
+                    </button>
+                    <button
+                      class="card-btn danger-btn"
+                      type="button"
+                      title="从队列中删除"
+                      @click="removeQueueItem(item.id)"
+                    >
+                      删除 ✕
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div v-else class="drawer-empty-state">
+                <div class="drawer-empty-icon">📋</div>
+                <div class="drawer-empty-title">导出队列为空</div>
+                <div class="drawer-empty-desc">
+                  调整好视频片段截取时间、字幕、贴纸后，点击底部「＋ 加入队列」即可将任务添加至此处，稍后一键串行批量导出！
                 </div>
               </div>
             </div>

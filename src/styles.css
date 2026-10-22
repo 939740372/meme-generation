@@ -3380,3 +3380,420 @@ code {
   font-size: 10px;
   color: var(--faint);
 }
+
+/* ==========================================================
+   批量处理与导出任务队列 (Batch Queue) 样式
+   ========================================================== */
+
+/* 底部操作栏队列按钮与呼吸指示灯 */
+.queue-add-btn {
+  background: rgba(246, 203, 102, 0.08) !important;
+  border-color: rgba(246, 203, 102, 0.28) !important;
+  color: #f7d27e !important;
+}
+
+.queue-add-btn:hover:not(:disabled) {
+  background: rgba(246, 203, 102, 0.16) !important;
+  border-color: var(--accent) !important;
+}
+
+.queue-dock-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.queue-dock-btn.queue-active {
+  border-color: #4ade80 !important;
+  color: #86efac !important;
+  background: rgba(74, 222, 128, 0.1) !important;
+}
+
+.queue-pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 6px #4ade80;
+  animation: pulse-ring 1.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse-ring {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(1.3);
+  }
+}
+
+.queue-tab-indicator {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 6px #4ade80;
+  margin-right: 4px;
+}
+
+.chip-active {
+  background: #4ade80 !important;
+  color: #0b1219 !important;
+  font-weight: 700;
+}
+
+/* 抽屉 Header 批量操作按钮 */
+.drawer-queue-start-btn {
+  height: 30px;
+  padding: 0 13px;
+  border-radius: 6px;
+  background: #22c55e;
+  border: 1px solid #16a34a;
+  color: #0b1510;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.drawer-queue-start-btn:hover {
+  background: #4ade80;
+  box-shadow: 0 0 10px rgba(74, 222, 128, 0.35);
+  transform: translateY(-1px);
+}
+
+.drawer-queue-pause-btn {
+  height: 30px;
+  padding: 0 13px;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.16);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  color: #fbbf24;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.drawer-queue-pause-btn:hover {
+  background: rgba(245, 158, 11, 0.28);
+  border-color: #fbbf24;
+}
+
+.drawer-clear-btn.danger-hover:hover {
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.4);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+/* 抽屉统计条 */
+.queue-tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.queue-summary-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  font-size: 11.5px;
+  color: var(--faint);
+}
+
+.queue-summary-stats {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.queue-summary-stats strong {
+  color: #f0f4f8;
+}
+
+.queue-summary-stats .stat-pending {
+  color: #cbd5e1;
+}
+
+.queue-summary-stats .stat-rendering {
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+.queue-summary-stats .stat-completed {
+  color: #4ade80;
+}
+
+.queue-summary-stats .stat-failed {
+  color: #f87171;
+}
+
+.queue-summary-tip {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+/* 队列卡片列表 */
+.queue-cards-strip {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+
+.queue-card {
+  flex: 0 0 250px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: rgba(18, 25, 36, 0.75);
+  transition: all 0.18s ease;
+  min-height: 142px;
+  position: relative;
+  overflow: hidden;
+}
+
+.queue-card:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(24, 32, 46, 0.85);
+}
+
+.queue-card.card-status-rendering {
+  border-color: rgba(56, 189, 248, 0.4);
+  background: rgba(14, 32, 50, 0.85);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.15);
+}
+
+.queue-card.card-status-completed {
+  border-color: rgba(74, 222, 128, 0.25);
+}
+
+.queue-card.card-status-failed {
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.queue-card-top {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.queue-card-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.queue-card-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #f1f5f9;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 130px;
+}
+
+.queue-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.format-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.format-badge.gif {
+  background: rgba(246, 203, 102, 0.15);
+  color: #f6cb66;
+  border: 1px solid rgba(246, 203, 102, 0.3);
+}
+
+.format-badge.webp {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.queue-status-chip {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge-pending {
+  background: rgba(255, 255, 255, 0.06);
+  color: #94a3b8;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.badge-rendering {
+  background: rgba(56, 189, 248, 0.16);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  animation: pulse-ring 1.8s infinite;
+}
+
+.badge-completed {
+  background: rgba(74, 222, 128, 0.15);
+  color: #4ade80;
+  border: 1px solid rgba(74, 222, 128, 0.3);
+}
+
+.badge-failed {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.badge-cancelled {
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.queue-card-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.queue-time-range {
+  font-family: ui-monospace, monospace;
+}
+
+.queue-file-size {
+  color: #4ade80;
+  font-weight: 600;
+}
+
+.queue-dest-name {
+  color: rgba(255, 255, 255, 0.4);
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 进度条 */
+.queue-progress-track {
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 6px 0 2px 0;
+}
+
+.queue-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #38bdf8, #22c55e);
+  border-radius: 2px;
+  transition: width 0.2s ease;
+}
+
+.queue-card-msg-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10.5px;
+  color: var(--faint);
+  min-height: 16px;
+  margin-top: 2px;
+}
+
+.queue-card-msg {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 190px;
+}
+
+.queue-card-msg.msg-error {
+  color: #f87171;
+}
+
+.queue-percent-text {
+  font-weight: 600;
+  color: #38bdf8;
+  font-family: ui-monospace, monospace;
+}
+
+/* 卡片操作按钮 */
+.queue-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.queue-card-actions .card-btn {
+  flex: 1;
+  height: 25px;
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #cbd5e1;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.queue-card-actions .card-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.queue-card-actions .highlight-btn {
+  background: rgba(246, 203, 102, 0.12);
+  border-color: rgba(246, 203, 102, 0.3);
+  color: #f6cb66;
+}
+
+.queue-card-actions .highlight-btn:hover {
+  background: rgba(246, 203, 102, 0.25);
+  color: #fef08a;
+}
+
+.queue-card-actions .danger-btn {
+  flex: 0 0 28px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.queue-card-actions .danger-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.35);
+}
