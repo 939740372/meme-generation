@@ -106,6 +106,8 @@ export interface RenderPlan {
   hwAccel?: HwAccelPolicy;
   hasAudio?: boolean;
   bgmOverlay?: BgmOverlay | null;
+  sourceWidth?: number;
+  sourceHeight?: number;
 }
 
 export interface ExportRecord {
