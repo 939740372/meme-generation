@@ -1,6 +1,6 @@
 # 技术设计：最近导出历史与快捷操作
 
-- 状态：designed
+- 状态：ready-to-merge
 - Feature slug: export-history
 - 分支：feature/export-history
 - 负责人：待定

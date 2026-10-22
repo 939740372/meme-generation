@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import {
   cancelRender,
+  copyFileToClipboard,
   getDesktopInfo,
   isDesktopRuntime,
   listenForRenderEvents,
@@ -9,8 +10,11 @@ import {
   pickPng,
   pickVideo,
   probeMedia,
+  readFileAsDataUrl,
   renderGif,
+  revealFileInDir,
   type DesktopInfo,
+  type ExportRecord,
   type MediaInfo,
   type RenderPlan,
 } from "./lib/desktop";
@@ -569,6 +573,217 @@ function clearImage(): void {
   useImage.value = false;
 }
 
+const HISTORY_STORAGE_KEY = "meme_studio_export_history";
+const MAX_HISTORY = 10;
+const historyList = ref<ExportRecord[]>([]);
+const isDrawerOpen = ref(false);
+
+const toastText = ref("");
+const toastVisible = ref(false);
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
+
+function showToast(text: string): void {
+  toastText.value = text;
+  toastVisible.value = true;
+  if (toastTimer) {
+    clearTimeout(toastTimer);
+  }
+  toastTimer = setTimeout(() => {
+    toastVisible.value = false;
+  }, 3200);
+}
+
+function formatBytes(bytes: number): string {
+  if (!bytes || bytes <= 0) return "0 KB";
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function formatRelativeTime(timestamp: number): string {
+  const diffSecs = Math.floor((Date.now() - timestamp) / 1000);
+  if (diffSecs < 60) return "刚刚";
+  const diffMins = Math.floor(diffSecs / 60);
+  if (diffMins < 60) return `${diffMins} 分钟前`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours} 小时前`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays} 天前`;
+}
+
+async function revealExportFile(path: string): Promise<void> {
+  if (!isDesktop.value) {
+    showToast("请在桌面模式中使用此功能");
+    return;
+  }
+  try {
+    await revealFileInDir(path);
+    showToast("已在访达/资源管理器中定位文件");
+  } catch {
+    showToast("无法定位文件，可能已被移动或删除");
+  }
+}
+
+async function copyExportFile(path: string): Promise<void> {
+  try {
+    const fileCopied = await copyFileToClipboard(path);
+    if (fileCopied) {
+      showToast("已复制 GIF 文件到剪贴板，可直接在微信/聊天软件中粘贴！");
+    } else {
+      showToast("已复制文件路径到剪贴板");
+    }
+  } catch {
+    showToast("复制失败");
+  }
+}
+
+async function loadHistoryPlan(record: ExportRecord): Promise<void> {
+  const p = record.plan;
+  if (!p) return;
+
+  if (p.inputPath && (!media.value || media.value.path !== p.inputPath)) {
+    if (isDesktop.value) {
+      try {
+        const probed = await probeMedia(p.inputPath);
+        media.value = probed;
+        inputPath.value = p.inputPath;
+      } catch {
+        showToast("源视频文件已被移动，已恢复其他参数");
+      }
+    } else {
+      inputPath.value = p.inputPath;
+    }
+  }
+
+  startSecs.value = p.startSecs;
+  endSecs.value = p.endSecs;
+  outputWidth.value = p.outputWidth;
+  fps.value = p.fps;
+  currentQuality.value = p.quality ?? "medium";
+  onManualParameterChange();
+
+  if (p.crop) {
+    useCrop.value = true;
+    crop.x = p.crop.x;
+    crop.y = p.crop.y;
+    crop.width = p.crop.width;
+    crop.height = p.crop.height;
+  } else {
+    useCrop.value = false;
+  }
+
+  if (p.textOverlay) {
+    useText.value = true;
+    text.value = p.textOverlay.text;
+    textX.value = p.textOverlay.x;
+    textY.value = p.textOverlay.y;
+    textSize.value = p.textOverlay.size;
+    textColor.value = p.textOverlay.color;
+  } else {
+    useText.value = false;
+  }
+
+  if (p.imageOverlay) {
+    useImage.value = true;
+    imagePath.value = p.imageOverlay.path;
+    imageX.value = p.imageOverlay.x;
+    imageY.value = p.imageOverlay.y;
+    imageWidth.value = p.imageOverlay.width;
+  } else {
+    useImage.value = false;
+  }
+
+  outputPath.value = p.outputPath;
+  showToast(`已恢复「${record.fileName}」的历史制作参数`);
+}
+
+function removeHistoryItem(id: string): void {
+  historyList.value = historyList.value.filter((h) => h.id !== id);
+  saveHistoryToStorage();
+  showToast("已从历史记录移除");
+}
+
+function clearAllHistory(): void {
+  historyList.value = [];
+  saveHistoryToStorage();
+  showToast("历史记录已清空");
+}
+
+async function addHistoryRecord(filePath: string, bytes: number): Promise<void> {
+  const fileName = filePath.split(/[\\/]/).pop() ?? "meme.gif";
+  const planSnapshot = buildRenderPlan();
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const record: ExportRecord = {
+    id,
+    fileName,
+    filePath,
+    outputBytes: bytes,
+    timestamp: Date.now(),
+    plan: planSnapshot,
+  };
+
+  historyList.value = [
+    record,
+    ...historyList.value.filter((h) => h.filePath !== filePath),
+  ].slice(0, MAX_HISTORY);
+  saveHistoryToStorage();
+
+  try {
+    const dataUrl = await readFileAsDataUrl(filePath);
+    if (dataUrl) {
+      const target = historyList.value.find((h) => h.id === id);
+      if (target) {
+        target.previewUrl = dataUrl;
+      }
+    }
+  } catch {
+    // ignore
+  }
+}
+
+function saveHistoryToStorage(): void {
+  try {
+    const toSave = historyList.value.slice(0, MAX_HISTORY).map((item) => ({
+      ...item,
+      previewUrl: undefined,
+    }));
+    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(toSave));
+  } catch {
+    // ignore
+  }
+}
+
+function loadHistoryFromStorage(): void {
+  try {
+    const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      historyList.value = parsed.slice(0, MAX_HISTORY);
+      for (const item of historyList.value) {
+        if (!item.previewUrl && item.filePath) {
+          readFileAsDataUrl(item.filePath)
+            .then((dataUrl) => {
+              if (dataUrl) {
+                item.previewUrl = dataUrl;
+              }
+            })
+            .catch(() => {});
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+}
+
+function handleKeydown(e: KeyboardEvent): void {
+  if (e.key === "Escape" && isDrawerOpen.value) {
+    isDrawerOpen.value = false;
+  }
+}
+
 async function connectDesktopEvents(): Promise<void> {
   if (!isDesktop.value) {
     return;
@@ -585,7 +800,7 @@ async function connectDesktopEvents(): Promise<void> {
         progress.value = event.progress;
         statusMessage.value = event.message;
       },
-      onCompleted: (event) => {
+      onCompleted: async (event) => {
         if (taskId.value && event.taskId !== taskId.value) {
           return;
         }
@@ -595,6 +810,7 @@ async function connectDesktopEvents(): Promise<void> {
         outputBytes.value = event.outputBytes;
         outputPath.value = event.outputPath;
         statusMessage.value = "GIF 已导出，可以打开文件查看。";
+        await addHistoryRecord(event.outputPath, event.outputBytes);
       },
       onFailed: (event) => {
         if (taskId.value && event.taskId !== taskId.value) {
@@ -624,6 +840,8 @@ let resizeObserver: ResizeObserver | null = null;
 
 onMounted(async () => {
   try {
+    loadHistoryFromStorage();
+    window.addEventListener("keydown", handleKeydown);
     desktopInfo.value = await getDesktopInfo();
     await connectDesktopEvents();
     if (stageRef.value && typeof ResizeObserver !== "undefined") {
@@ -641,11 +859,23 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   stopListening.value?.();
   resizeObserver?.disconnect();
+  window.removeEventListener("keydown", handleKeydown);
+  if (toastTimer) {
+    clearTimeout(toastTimer);
+  }
 });
 </script>
 
 <template>
   <div class="studio-shell">
+    <!-- 全局 Toast 提示 -->
+    <Transition name="toast-fade">
+      <div v-if="toastVisible" class="toast-notification" role="status">
+        <span class="toast-icon">✓</span>
+        <span class="toast-text">{{ toastText }}</span>
+      </div>
+    </Transition>
+
     <aside class="studio-sidebar">
       <div class="brand-lockup">
         <div class="brand-mark">M</div>
@@ -660,6 +890,75 @@ onBeforeUnmount(() => {
           GIF 制作
         </a>
       </nav>
+
+      <div class="sidebar-history-section">
+        <div class="sidebar-history-header">
+          <div class="sidebar-history-title">
+            <span class="history-clock-icon">🕒</span>
+            <strong>最近导出</strong>
+            <span v-if="historyList.length > 0" class="history-count-badge">{{ historyList.length }}</span>
+          </div>
+          <button
+            v-if="historyList.length > 0"
+            type="button"
+            class="history-expand-toggle"
+            title="查看完整历史抽屉"
+            @click="isDrawerOpen = true"
+          >
+            全部 ↗
+          </button>
+        </div>
+
+        <div v-if="historyList.length > 0" class="sidebar-history-list">
+          <div
+            v-for="item in historyList.slice(0, 2)"
+            :key="item.id"
+            class="sidebar-history-card"
+            :title="`${item.fileName}\n${item.filePath}`"
+          >
+            <div class="sidebar-history-thumb">
+              <img v-if="item.previewUrl" :src="item.previewUrl" :alt="item.fileName" />
+              <span v-else class="thumb-fallback">GIF</span>
+            </div>
+            <div class="sidebar-history-info">
+              <span class="sidebar-history-name">{{ item.fileName }}</span>
+              <div class="sidebar-history-meta">
+                <span class="sidebar-history-size">{{ formatBytes(item.outputBytes) }}</span>
+                <span class="sidebar-history-time">{{ formatRelativeTime(item.timestamp) }}</span>
+              </div>
+            </div>
+            <div class="sidebar-history-actions">
+              <button
+                type="button"
+                class="sidebar-action-btn"
+                title="在访达中定位"
+                @click.stop="revealExportFile(item.filePath)"
+              >
+                🔍
+              </button>
+              <button
+                type="button"
+                class="sidebar-action-btn"
+                title="复制文件"
+                @click.stop="copyExportFile(item.filePath)"
+              >
+                📋
+              </button>
+              <button
+                type="button"
+                class="sidebar-action-btn"
+                title="载入此历史参数"
+                @click.stop="loadHistoryPlan(item)"
+              >
+                ↺
+              </button>
+            </div>
+          </div>
+        </div>
+        <div v-else class="sidebar-history-empty">
+          <span>暂无导出记录</span>
+        </div>
+      </div>
 
       <div class="sidebar-bottom">
         <div class="runtime-card">
@@ -932,8 +1231,35 @@ onBeforeUnmount(() => {
             <small>{{ Math.round(progress) }}%</small>
           </div>
           <div class="export-actions">
-            <span v-if="status === 'completed'" class="output-size">{{ (outputBytes / 1024).toFixed(1) }} KB</span>
+            <span v-if="status === 'completed'" class="output-size">{{ formatBytes(outputBytes) }}</span>
             <span v-else-if="media" class="preset-summary-badge">{{ currentPresetInfo.name }} · {{ currentPresetInfo.badge }}</span>
+            <template v-if="status === 'completed' && outputPath">
+              <button
+                class="secondary-action"
+                type="button"
+                title="在访达/资源管理器中显示此 GIF"
+                @click="revealExportFile(outputPath)"
+              >
+                访达定位 ↗
+              </button>
+              <button
+                class="secondary-action"
+                type="button"
+                title="复制文件到剪贴板，支持直接在微信等软件粘贴"
+                @click="copyExportFile(outputPath)"
+              >
+                复制文件 📋
+              </button>
+            </template>
+            <button
+              v-if="historyList.length > 0"
+              class="secondary-action"
+              type="button"
+              title="查看全部导出历史"
+              @click="isDrawerOpen = !isDrawerOpen"
+            >
+              历史 ({{ historyList.length }})
+            </button>
             <button v-if="isBusy" class="secondary-action danger" type="button" @click="stopRender">取消</button>
             <button v-else class="primary-action" type="button" :disabled="!canRender || !isDesktop" @click="startRender">
               {{ status === "completed" ? "再次导出" : "导出 GIF" }} <span>↗</span>
@@ -942,6 +1268,105 @@ onBeforeUnmount(() => {
         </section>
 
       </div>
+
+      <!-- 底部滑出式历史抽屉 -->
+      <Transition name="drawer-slide">
+        <div v-if="isDrawerOpen" class="history-drawer-backdrop" @click="isDrawerOpen = false">
+          <div class="history-drawer-panel" @click.stop>
+            <div class="drawer-header">
+              <div class="drawer-header-left">
+                <span class="drawer-dot"></span>
+                <strong>导出历史</strong>
+                <span class="drawer-count-chip">共 {{ historyList.length }} 个动图</span>
+              </div>
+              <div class="drawer-header-right">
+                <button
+                  v-if="historyList.length > 0"
+                  type="button"
+                  class="drawer-clear-btn"
+                  @click="clearAllHistory"
+                >
+                  清空历史
+                </button>
+                <button
+                  type="button"
+                  class="drawer-close-btn"
+                  aria-label="关闭历史抽屉"
+                  @click="isDrawerOpen = false"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div v-if="historyList.length > 0" class="drawer-cards-strip">
+              <div
+                v-for="item in historyList"
+                :key="item.id"
+                class="history-card"
+              >
+                <div class="history-card-thumb">
+                  <img v-if="item.previewUrl" :src="item.previewUrl" :alt="item.fileName" />
+                  <div v-else class="card-thumb-fallback">
+                    <span>GIF</span>
+                  </div>
+                  <span class="history-card-size-pill">{{ formatBytes(item.outputBytes) }}</span>
+                </div>
+
+                <div class="history-card-body">
+                  <div class="history-card-title-row">
+                    <strong class="history-card-filename" :title="item.fileName">{{ item.fileName }}</strong>
+                    <small class="history-card-time">{{ formatRelativeTime(item.timestamp) }}</small>
+                  </div>
+                  <div class="history-card-desc">
+                    <span>{{ item.plan.outputWidth }}px · {{ item.plan.fps }} FPS</span>
+                    <span v-if="item.plan.quality">· {{ item.plan.quality }}</span>
+                  </div>
+                  <div class="history-card-actions">
+                    <button
+                      type="button"
+                      class="history-btn primary-subtle"
+                      title="在访达/资源管理器中定位"
+                      @click="revealExportFile(item.filePath)"
+                    >
+                      访达定位
+                    </button>
+                    <button
+                      type="button"
+                      class="history-btn"
+                      title="复制文件到剪贴板"
+                      @click="copyExportFile(item.filePath)"
+                    >
+                      复制
+                    </button>
+                    <button
+                      type="button"
+                      class="history-btn"
+                      title="载入此条历史制作参数"
+                      @click="loadHistoryPlan(item)"
+                    >
+                      载入参数
+                    </button>
+                    <button
+                      type="button"
+                      class="history-btn delete-btn"
+                      title="从历史记录删除"
+                      @click="removeHistoryItem(item.id)"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-else class="drawer-empty-state">
+              <div class="empty-icon">✦</div>
+              <strong>暂无导出历史</strong>
+              <span>在此完成的 GIF 将保存在这里，支持一键定位、复制与参数回溯。</span>
+            </div>
+          </div>
+        </div>
+      </Transition>
     </main>
   </div>
 </template>

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { revealItemInDir as openerRevealItemInDir } from "@tauri-apps/plugin-opener";
 
 export interface DesktopInfo {
   version: string;
@@ -50,6 +51,16 @@ export interface RenderPlan {
   quality?: "low" | "medium" | "high";
   textOverlay: TextOverlay | null;
   imageOverlay: ImageOverlay | null;
+}
+
+export interface ExportRecord {
+  id: string;
+  fileName: string;
+  filePath: string;
+  outputBytes: number;
+  timestamp: number;
+  previewUrl?: string;
+  plan: RenderPlan;
 }
 
 export interface RenderProgress {
@@ -191,4 +202,40 @@ export async function listenForRenderEvents(
   return () => {
     unlisteners.forEach((unlisten) => unlisten());
   };
+}
+
+export async function revealFileInDir(path: string): Promise<void> {
+  requireDesktopRuntime();
+  await openerRevealItemInDir(path);
+}
+
+export async function copyFileToClipboard(path: string): Promise<boolean> {
+  let fileCopied = false;
+  if (isDesktopRuntime()) {
+    try {
+      await invoke("copy_file_to_clipboard", { path });
+      fileCopied = true;
+    } catch {
+      // ignore
+    }
+  }
+  try {
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      await navigator.clipboard.writeText(path);
+    }
+  } catch {
+    // ignore
+  }
+  return fileCopied;
+}
+
+export async function readFileAsDataUrl(path: string): Promise<string | null> {
+  if (!isDesktopRuntime()) {
+    return null;
+  }
+  try {
+    return await invoke<string>("read_file_as_data_url", { path });
+  } catch {
+    return null;
+  }
 }
