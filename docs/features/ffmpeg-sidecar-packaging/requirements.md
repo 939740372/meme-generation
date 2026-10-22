@@ -1,6 +1,6 @@
 # 需求文档：FFmpeg Sidecar 打包与 libfreetype 文字渲染
 
-- 状态：designed
+- 状态：ready-to-merge
 - Feature slug：ffmpeg-sidecar-packaging
 - 分支：feature/ffmpeg-sidecar-packaging
 - 负责人：待定
@@ -50,8 +50,8 @@
 
 ## 6. 验收标准
 
-- [ ] `scripts/download-ffmpeg-sidecar.mjs` 能成功下载当前平台的静态 FFmpeg 与 ffprobe（含 `drawtext`）。
-- [ ] `tauri.conf.json` 包含 `bundle.externalBin` 配置。
-- [ ] Rust 端二进制定位支持 Sidecar，优先采用打包二进制。
-- [ ] 真实媒体测试中，配置文字（如中文与英文）可成功转码生成带文字叠加的 GIF，不再提示 `DRAW_TEXT_UNAVAILABLE`。
-- [ ] `pnpm build`、`cargo check` 与 `cargo test` 全部通过。
+- [x] `scripts/download-ffmpeg-sidecar.mjs` 能成功下载当前平台的静态 FFmpeg 与 ffprobe（含 `drawtext`）。
+- [x] `tauri.conf.json` 包含 `bundle.externalBin` 配置。
+- [x] Rust 端二进制定位支持 Sidecar，优先采用打包二进制。
+- [x] 真实媒体测试中，配置文字（如中文与英文）可成功转码生成带文字叠加的 GIF，不再提示 `DRAW_TEXT_UNAVAILABLE`。
+- [x] `pnpm build`、`cargo check` 与 `cargo test` 全部通过。

@@ -1,6 +1,6 @@
 # 需求调研：FFmpeg Sidecar 打包与 libfreetype 文字渲染
 
-- 状态：researching
+- 状态：ready-to-merge
 - Feature slug：ffmpeg-sidecar-packaging
 - 分支：feature/ffmpeg-sidecar-packaging
 - 负责人：待定

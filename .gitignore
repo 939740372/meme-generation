@@ -31,3 +31,7 @@ progress.md
 
 # Local package/cache artifacts
 .pnpm-store
+
+# Tauri external binaries (managed via scripts/download-ffmpeg-sidecar.mjs)
+src-tauri/binaries/*
+!src-tauri/binaries/.gitkeep
