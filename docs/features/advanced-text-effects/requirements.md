@@ -1,6 +1,6 @@
 # 需求说明书：高级文字排版效果 (advanced-text-effects)
 
-- 状态：implementing
+- 状态：merged
 - Feature slug: advanced-text-effects
 - 分支：feature/advanced-text-effects
 - 负责人：Antigravity

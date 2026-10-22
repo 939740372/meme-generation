@@ -1,6 +1,6 @@
 # 实现方案：高级文字排版效果 (advanced-text-effects)
 
-- 状态：ready-to-merge
+- 状态：merged
 - Feature slug: advanced-text-effects
 - 分支：feature/advanced-text-effects
 - 负责人：Antigravity

@@ -58,6 +58,7 @@
 - [x] 带音轨的短视频表情导出（MP4 格式，H.264+AAC，支持保留原声、变速音效同步与 0:a? 容错降级，详见 docs/features/audio-video-export/）
 - [x] 硬件加速探测与可选编码策略（自动探测 VideoToolbox / NVENC / QSV，支持 GPU 极速压制与 CPU 软编降级，详见 docs/features/hardware-acceleration/）
 - [x] 自定义背景音乐与音效混流（内置 8 款经典二创音效库、本地音频导入、原声与 BGM 独立音量平滑控制、amix 混流与 atrim 时长精确对齐，详见 docs/features/bgm-audio-mixing/）
+- [x] 高级文字排版效果（自由角度旋转、圆弧弯曲环绕、动感斜体倾斜与立体阴影，全格式预览与导出一致，详见 docs/features/advanced-text-effects/）
 - [ ] 跨平台安装包和自动更新
 
 ## 暂不纳入当前范围

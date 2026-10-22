@@ -1,6 +1,6 @@
 # 任务清单：高级文字排版效果 (advanced-text-effects)
 
-- 状态：ready-to-merge
+- 状态：merged
 - Feature slug: advanced-text-effects
 - 分支：feature/advanced-text-effects
 - 负责人：Antigravity
@@ -50,7 +50,7 @@
 
 ### 阶段五：合并与主分支同步
 
-- [ ] 非快进合并至 `main` 分支
-- [ ] 更新根目录 `TODO.md`
-- [ ] 推送 `main` 至远程 `origin main`
-- [ ] 清理本地分支 `feature/advanced-text-effects`
+- [x] 非快进合并至 `main` 分支
+- [x] 更新根目录 `TODO.md`
+- [x] 推送 `main` 至远程 `origin main`
+- [x] 清理本地分支 `feature/advanced-text-effects`
