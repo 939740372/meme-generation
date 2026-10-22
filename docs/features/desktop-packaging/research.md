@@ -1,6 +1,6 @@
 # 需求调研：macOS DMG 桌面安装包构建与分发验收
 
-- 状态：proposed
+- 状态：ready-to-merge
 - Feature slug: desktop-packaging
 - 分支：feature/desktop-packaging
 - 负责人：Antigravity
