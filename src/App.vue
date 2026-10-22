@@ -3302,7 +3302,7 @@ onBeforeUnmount(() => {
                   @click="setExportFormat('mp4')"
                 >
                   <span class="format-pill-name">MP4</span>
-                  <span class="format-pill-badge badge-mp4">原声微视频</span>
+                  <span class="format-pill-badge badge-mp4">带原声</span>
                 </button>
               </div>
 

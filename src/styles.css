@@ -6,6 +6,7 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   --bg: #0b0e12;
+  --fg: #e8edf2;
   --rail: #10141a;
   --panel: #151a21;
   --panel-raised: #1b222b;
@@ -21,6 +22,7 @@
   --cyan: #75d8f4;
   --orange: #ffad6b;
   --danger: #f17883;
+  --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
@@ -515,7 +517,7 @@ code {
   display: flex;
   min-height: 0;
   flex-direction: column;
-  padding: 13px;
+  padding: 10px 12px 8px;
   overflow: hidden;
 }
 
@@ -562,7 +564,7 @@ code {
   min-height: 0;
   flex: 1 1 auto;
   place-items: center;
-  margin-top: 10px;
+  margin-top: 6px;
   overflow: hidden;
   aspect-ratio: auto !important;
   border: 1px solid rgba(196, 220, 232, 0.11);
@@ -817,12 +819,12 @@ code {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
-  margin-top: 6px;
+  padding: 5px 10px;
+  margin-top: 5px;
   background: rgba(15, 23, 42, 0.55);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 6px;
-  gap: 10px;
+  gap: 8px;
 }
 
 .preview-toolbar-left {
@@ -932,12 +934,12 @@ code {
 
 .media-summary {
   display: flex;
-  min-height: 40px;
-  flex: 0 0 40px;
+  min-height: 34px;
+  flex: 0 0 34px;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
-  padding-top: 9px;
+  gap: 12px;
+  padding-top: 5px;
   overflow: hidden;
 }
 
@@ -1006,8 +1008,27 @@ code {
   display: flex;
   min-height: 0;
   flex-direction: column;
-  padding: 7px 13px 2px;
-  overflow: hidden;
+  padding: 8px 10px 14px 12px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.controls-panel::-webkit-scrollbar {
+  width: 5px;
+}
+
+.controls-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.controls-panel::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+}
+
+.controls-panel::-webkit-scrollbar-thumb:hover {
+  background: rgba(215, 244, 106, 0.35);
 }
 
 .compact-heading {
@@ -1268,6 +1289,11 @@ code {
   gap: 4px;
   min-width: 0;
   overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.layer-tabs-list::-webkit-scrollbar {
+  display: none;
 }
 
 .layer-tab-btn {
@@ -1570,9 +1596,9 @@ code {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 3px;
   height: 28px;
-  padding: 0 8px;
+  padding: 0 6px;
   border: 1px solid var(--line);
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.04);
@@ -1580,6 +1606,7 @@ code {
   font-size: 11px;
   cursor: pointer;
   white-space: nowrap;
+  flex-shrink: 0;
   transition: all 0.15s ease;
 }
 
@@ -1760,26 +1787,28 @@ code {
 .export-bar {
   display: flex;
   min-width: 0;
-  min-height: 58px;
-  flex: 0 0 58px;
+  min-height: 54px;
+  flex: 0 0 54px;
   align-items: center;
   justify-content: space-between;
-  gap: 15px;
+  gap: 12px;
   margin: 0;
-  padding: 9px 11px;
+  padding: 8px 12px;
 }
 
 .export-status {
   display: flex;
   min-width: 0;
+  flex: 1 1 200px;
   align-items: center;
   gap: 9px;
+  overflow: hidden;
 }
 
 .status-icon {
   display: grid;
-  width: 40px;
-  height: 40px;
+  width: 38px;
+  height: 38px;
   flex: 0 0 auto;
   place-items: center;
   color: var(--accent);
@@ -1810,22 +1839,22 @@ code {
 }
 
 .export-status strong {
-  margin-top: 2px;
+  margin-top: 1px;
   color: #d9e2e8;
-  font-size: 18px;
+  font-size: 17px;
 }
 
 .export-status span {
-  max-width: 365px;
-  margin-top: 3px;
+  max-width: 100%;
+  margin-top: 2px;
   color: var(--faint);
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .progress-wrap {
   display: flex;
-  min-width: 150px;
-  flex: 1;
+  min-width: 120px;
+  flex: 0 1 180px;
   align-items: center;
   gap: 8px;
 }
@@ -1863,15 +1892,18 @@ code {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
+  flex-wrap: nowrap;
 }
 
 .primary-action,
 .secondary-action {
-  min-height: 38px;
-  padding: 0 11px;
-  font-size: 15px;
+  min-height: 36px;
+  padding: 0 10px;
+  font-size: 14px;
   border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: 140ms ease;
 }
 
@@ -1987,9 +2019,9 @@ code {
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
-  gap: 6px;
-  margin-top: 8px;
-  padding: 8px 10px;
+  gap: 5px;
+  margin-top: 5px;
+  padding: 6px 10px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: rgba(16, 20, 26, 0.7);
