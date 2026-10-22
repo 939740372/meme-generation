@@ -1,6 +1,6 @@
 # 架构与设计规范：硬件加速编码策略探测 (hardware-acceleration)
 
-- 状态：implementing
+- 状态：merged
 - Feature slug: hardware-acceleration
 - 分支：feature/hardware-acceleration
 - 负责人：Antigravity

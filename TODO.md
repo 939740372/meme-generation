@@ -56,7 +56,7 @@
 - [x] AVIF 等更高压缩比的动图输出（基于 libsvtav1，体积比 WebP 还小 20%~80%，秒级转码，详见 docs/features/avif-format/）
 - [x] 全局画面滤镜与调色（黑白致郁、高反差、港风复古、反色负片、2x鬼畜加速、倒放，详见 docs/features/video-filters/）
 - [x] 带音轨的短视频表情导出（MP4 格式，H.264+AAC，支持保留原声、变速音效同步与 0:a? 容错降级，详见 docs/features/audio-video-export/）
-- [ ] 硬件加速探测与可选编码策略
+- [x] 硬件加速探测与可选编码策略（自动探测 VideoToolbox / NVENC / QSV，支持 GPU 极速压制与 CPU 软编降级，详见 docs/features/hardware-acceleration/）
 - [ ] 跨平台安装包和自动更新
 
 ## 暂不纳入当前范围

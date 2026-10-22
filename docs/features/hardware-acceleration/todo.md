@@ -1,6 +1,6 @@
 # 细化开发任务清单：硬件加速编码策略探测 (hardware-acceleration)
 
-- 状态：ready-to-merge
+- 状态：merged
 - Feature slug: hardware-acceleration
 - 分支：feature/hardware-acceleration
 - 负责人：Antigravity
@@ -45,6 +45,6 @@
 - [x] 更新文档状态为 ready-to-merge 并提交
 
 ## 6. 合并至主分支
-- [ ] 切换到 `main` 分支执行非快进合并
-- [ ] 更新 `TODO.md` 产品大方向
-- [ ] 推送到远程仓库并清理本地分支
+- [x] 切换到 `main` 分支执行非快进合并
+- [x] 更新 `TODO.md` 产品大方向
+- [x] 推送到远程仓库并清理本地分支
