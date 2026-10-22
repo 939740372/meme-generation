@@ -52,6 +52,7 @@ export interface StudioDraft {
   format: "gif" | "webp" | "avif" | "mp4";
   videoFilter?: string;
   includeAudio?: boolean;
+  hwAccel?: "auto" | "disabled";
   selectedPresetId: string;
   useText: boolean;
   text: string;

@@ -58,6 +58,15 @@ export interface BuiltinSticker {
 
 export type ExportFormat = "gif" | "webp" | "avif" | "mp4";
 
+export type HwAccelPolicy = "auto" | "disabled";
+
+export interface HardwareAccelerationInfo {
+  supported: boolean;
+  engine: string;
+  encoder: string;
+  description: string;
+}
+
 export interface RenderPlan {
   inputPath: string;
   outputPath: string;
@@ -73,6 +82,7 @@ export interface RenderPlan {
   format?: ExportFormat;
   videoFilter?: string;
   includeAudio?: boolean;
+  hwAccel?: HwAccelPolicy;
 }
 
 export interface ExportRecord {
@@ -291,5 +301,26 @@ export async function getBuiltinStickers(): Promise<BuiltinSticker[]> {
     return await invoke<BuiltinSticker[]>("get_builtin_stickers");
   } catch {
     return [];
+  }
+}
+
+export async function getHardwareAccelerationInfo(): Promise<HardwareAccelerationInfo> {
+  if (!isDesktopRuntime()) {
+    return {
+      supported: false,
+      engine: "None",
+      encoder: "libx264",
+      description: "非桌面环境，使用软件压制",
+    };
+  }
+  try {
+    return await invoke<HardwareAccelerationInfo>("get_hardware_acceleration_info");
+  } catch {
+    return {
+      supported: false,
+      engine: "None",
+      encoder: "libx264",
+      description: "探测失败，自动使用 CPU 软件压制",
+    };
   }
 }
