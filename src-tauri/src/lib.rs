@@ -82,6 +82,11 @@ struct TextOverlay {
     y: u32,
     size: u32,
     color: String,
+    stroke_width: Option<u32>,
+    stroke_color: Option<String>,
+    use_box: Option<bool>,
+    box_color: Option<String>,
+    box_opacity: Option<f64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -482,7 +487,11 @@ fn escape_drawtext(value: &str) -> String {
 }
 
 fn color_for_filter(value: &str) -> String {
-    format!("0x{}", &value[1..])
+    if let Some(hex) = value.strip_prefix('#') {
+        format!("0x{}", hex)
+    } else {
+        value.to_string()
+    }
 }
 
 fn build_filter_graph(plan: &RenderPlan) -> String {
@@ -506,7 +515,25 @@ fn build_filter_graph(plan: &RenderPlan) -> String {
         drawtext_parts.push(format!("fontsize={}", text.size));
         drawtext_parts.push(format!("x={}", text.x));
         drawtext_parts.push(format!("y={}", text.y));
-        drawtext_parts.push("box=1:boxcolor=black@0.45:boxborderw=8".to_string());
+
+        let stroke_w = text.stroke_width.unwrap_or(0);
+        if stroke_w > 0 {
+            let stroke_c = text.stroke_color.as_deref().unwrap_or("#000000");
+            drawtext_parts.push(format!("borderw={}", stroke_w));
+            drawtext_parts.push(format!("bordercolor={}", color_for_filter(stroke_c)));
+        }
+
+        if text.use_box.unwrap_or(false) {
+            let box_c = text.box_color.as_deref().unwrap_or("#000000");
+            let box_op = text.box_opacity.unwrap_or(0.60);
+            drawtext_parts.push(format!(
+                "box=1:boxcolor={}@{:.2}:boxborderw=8",
+                color_for_filter(box_c),
+                box_op
+            ));
+        } else {
+            drawtext_parts.push("box=0".to_string());
+        }
 
         source.push_str(&format!(",drawtext={}", drawtext_parts.join(":")));
     }
@@ -993,13 +1020,51 @@ mod tests {
                 y: 20,
                 size: 24,
                 color: "#ff0000".to_string(),
+                stroke_width: Some(3),
+                stroke_color: Some("#000000".to_string()),
+                use_box: Some(true),
+                box_color: Some("#111111".to_string()),
+                box_opacity: Some(0.65),
             }),
             image_overlay: None,
         };
         let graph = build_filter_graph(&plan);
         assert!(graph.contains("drawtext="));
         assert!(graph.contains("测试文字"));
+        assert!(graph.contains("borderw=3"));
+        assert!(graph.contains("bordercolor=0x000000"));
+        assert!(graph.contains("box=1:boxcolor=0x111111@0.65"));
         assert!(graph.contains("paletteuse=dither=bayer:bayer_scale=3"));
+    }
+
+    #[test]
+    fn builds_drawtext_filter_graph_without_box_and_stroke() {
+        let plan = RenderPlan {
+            input_path: "input.mp4".to_string(),
+            output_path: "output.gif".to_string(),
+            start_secs: 0.0,
+            end_secs: 1.0,
+            crop: None,
+            output_width: 320,
+            fps: 10,
+            quality: None,
+            text_overlay: Some(TextOverlay {
+                text: "无底框纯字".to_string(),
+                x: 10,
+                y: 20,
+                size: 24,
+                color: "#ffffff".to_string(),
+                stroke_width: None,
+                stroke_color: None,
+                use_box: Some(false),
+                box_color: None,
+                box_opacity: None,
+            }),
+            image_overlay: None,
+        };
+        let graph = build_filter_graph(&plan);
+        assert!(graph.contains("box=0"));
+        assert!(!graph.contains("borderw="));
     }
 
     #[test]

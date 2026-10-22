@@ -136,6 +136,11 @@ const textX = ref(24);
 const textY = ref(24);
 const textSize = ref(42);
 const textColor = ref("#ffffff");
+const textStrokeWidth = ref(2);
+const textStrokeColor = ref("#000000");
+const textUseBox = ref(false);
+const textBoxColor = ref("#000000");
+const textBoxOpacity = ref(0.60);
 
 const useImage = ref(false);
 const imagePath = ref("");
@@ -177,6 +182,41 @@ const textDisplayTop = computed(() => {
 const textDisplayFontSize = computed(() => {
   if (!media.value || stageSize.width <= 0) return textSize.value;
   return Math.max(12, Math.min(textSize.value * (stageSize.width / media.value.width), 72));
+});
+
+const textDisplayStrokeWidth = computed(() => {
+  if (textStrokeWidth.value <= 0) return 0;
+  if (!media.value || stageSize.width <= 0) return textStrokeWidth.value;
+  const scaled = textStrokeWidth.value * (stageSize.width / media.value.width);
+  return Math.max(1, Math.round(scaled));
+});
+
+function hexToRgba(hex: string, opacity: number): string {
+  const clean = hex.replace("#", "");
+  const r = parseInt(clean.substring(0, 2), 16) || 0;
+  const g = parseInt(clean.substring(2, 4), 16) || 0;
+  const b = parseInt(clean.substring(4, 6), 16) || 0;
+  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+}
+
+const textDisplayBackground = computed(() => {
+  if (!textUseBox.value) return "transparent";
+  return hexToRgba(textBoxColor.value, textBoxOpacity.value);
+});
+
+const textPreviewStyle = computed(() => {
+  const styles: Record<string, string | number | undefined> = {
+    left: `${textDisplayLeft.value}px`,
+    top: `${textDisplayTop.value}px`,
+    color: textColor.value,
+    fontSize: `${textDisplayFontSize.value}px`,
+    backgroundColor: textDisplayBackground.value,
+    paintOrder: "stroke fill",
+  };
+  if (textStrokeWidth.value > 0) {
+    styles["-webkit-text-stroke"] = `${textDisplayStrokeWidth.value}px ${textStrokeColor.value}`;
+  }
+  return styles;
 });
 
 const imageDisplayLeft = computed(() => {
@@ -655,6 +695,11 @@ function buildRenderPlan(): RenderPlan {
           y: Number(textY.value),
           size: Number(textSize.value),
           color: textColor.value,
+          strokeWidth: Number(textStrokeWidth.value),
+          strokeColor: textStrokeColor.value,
+          useBox: Boolean(textUseBox.value),
+          boxColor: textBoxColor.value,
+          boxOpacity: Number(textBoxOpacity.value),
         }
       : null,
     imageOverlay:
@@ -817,6 +862,11 @@ async function loadHistoryPlan(record: ExportRecord): Promise<void> {
     textY.value = p.textOverlay.y;
     textSize.value = p.textOverlay.size;
     textColor.value = p.textOverlay.color;
+    textStrokeWidth.value = p.textOverlay.strokeWidth ?? 2;
+    textStrokeColor.value = p.textOverlay.strokeColor ?? "#000000";
+    textUseBox.value = p.textOverlay.useBox ?? false;
+    textBoxColor.value = p.textOverlay.boxColor ?? "#000000";
+    textBoxOpacity.value = p.textOverlay.boxOpacity ?? 0.6;
   } else {
     useText.value = false;
   }
@@ -1145,13 +1195,8 @@ onBeforeUnmount(() => {
                   <div
                     v-if="useText && text"
                     class="preview-text interactive-drag"
-                    :class="{ 'is-dragging': isDraggingText }"
-                    :style="{
-                      left: `${textDisplayLeft}px`,
-                      top: `${textDisplayTop}px`,
-                      color: textColor,
-                      fontSize: `${textDisplayFontSize}px`,
-                    }"
+                    :class="{ 'is-dragging': isDraggingText, 'with-box': textUseBox }"
+                    :style="textPreviewStyle"
                     title="按住鼠标拖拽文字位置"
                     @pointerdown="startDragText"
                   >
@@ -1378,6 +1423,24 @@ onBeforeUnmount(() => {
                   <label class="field"><span>Y</span><input v-model.number="textY" type="number" min="0" step="1" /></label>
                   <label class="field"><span>字号</span><input v-model.number="textSize" type="number" min="8" max="192" step="1" /></label>
                   <label class="field color-field"><span>颜色</span><input v-model="textColor" type="color" /></label>
+                </div>
+                <div class="field-grid four-up text-style-grid">
+                  <label class="field"><span>描边宽</span><input v-model.number="textStrokeWidth" type="number" min="0" max="12" step="1" /></label>
+                  <label class="field color-field"><span>描边色</span><input v-model="textStrokeColor" type="color" /></label>
+                  <label class="field toggle-inline-field">
+                    <span>底框</span>
+                    <label class="mini-toggle-row">
+                      <input v-model="textUseBox" type="checkbox" />
+                      <span class="toggle-ui mini-ui"></span>
+                      <small>{{ textUseBox ? "开启" : "关闭" }}</small>
+                    </label>
+                  </label>
+                  <label v-if="textUseBox" class="field color-field"><span>底色</span><input v-model="textBoxColor" type="color" /></label>
+                </div>
+                <div v-if="textUseBox" class="box-opacity-row">
+                  <span class="opacity-label">底框不透明度</span>
+                  <input v-model.number="textBoxOpacity" type="range" min="0.1" max="1.0" step="0.05" class="opacity-slider" />
+                  <span class="opacity-value">{{ Math.round(textBoxOpacity * 100) }}%</span>
                 </div>
               </div>
               <div class="toggle-row image-row">
