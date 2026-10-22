@@ -2713,13 +2713,23 @@ code {
   border-color: rgba(249, 115, 22, 0.38);
 }
 
-/* MP4 保留原声开关 */
-.audio-switch-row {
+/* MP4 音频混流控制面板 (bgm-audio-mixing) */
+.audio-mixing-panel {
   margin-bottom: 8px;
-  padding: 6px 10px;
-  background: rgba(249, 115, 22, 0.06);
-  border: 1px solid rgba(249, 115, 22, 0.25);
-  border-radius: 4px;
+  padding: 8px 10px;
+  background: rgba(249, 115, 22, 0.05);
+  border: 1px solid rgba(249, 115, 22, 0.22);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.audio-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 0;
 }
 
 .audio-switch-label {
@@ -2752,6 +2762,155 @@ code {
 .audio-switch-sub {
   font-size: 10px;
   color: var(--muted);
+}
+
+.audio-vol-badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #fb923c;
+  background: rgba(249, 115, 22, 0.12);
+  border: 1px solid rgba(249, 115, 22, 0.3);
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+
+.audio-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.audio-slider-label {
+  font-size: 11px;
+  color: var(--muted);
+  width: 52px;
+  flex-shrink: 0;
+}
+
+.audio-slider {
+  flex: 1;
+  accent-color: #f97316;
+  height: 4px;
+  cursor: pointer;
+}
+
+/* BGM 节 */
+.bgm-control-section {
+  padding-top: 6px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bgm-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.bgm-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #fb923c;
+}
+
+.bgm-action-btns {
+  display: flex;
+  gap: 6px;
+}
+
+.bgm-lib-btn,
+.bgm-pick-btn {
+  font-size: 10.5px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bgm-lib-btn:hover,
+.bgm-pick-btn:hover {
+  background: rgba(249, 115, 22, 0.2);
+  border-color: #f97316;
+  color: #fb923c;
+}
+
+.bgm-active-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(249, 115, 22, 0.35);
+  border-radius: 4px;
+}
+
+.bgm-active-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.bgm-play-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid rgba(249, 115, 22, 0.4);
+  background: rgba(249, 115, 22, 0.15);
+  color: #fb923c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.bgm-play-btn:hover {
+  background: #f97316;
+  color: #ffffff;
+}
+
+.bgm-active-meta {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.bgm-active-name {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+
+.bgm-active-dur {
+  font-size: 9.5px;
+  color: var(--muted);
+}
+
+.bgm-remove-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+.bgm-remove-btn:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
 }
 
 /* 硬件加速探测与切换 (hardware-acceleration) */
@@ -4171,4 +4330,144 @@ code {
 
 .filter-pill-label {
   font-size: 10.5px;
+}
+
+/* 抽屉音效素材库 (sfx-tab-content) */
+.sfx-tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.sfx-filter-bar {
+  display: flex;
+  align-items: center;
+}
+
+.sfx-category-pills {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.sfx-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
+  gap: 10px;
+  padding: 4px 2px;
+}
+
+.sfx-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: #181c22;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 8px 10px;
+  transition: all 0.18s ease;
+}
+
+.sfx-card:hover {
+  border-color: rgba(249, 115, 22, 0.45);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.sfx-card.is-selected {
+  border-color: #f97316;
+  background: rgba(249, 115, 22, 0.08);
+}
+
+.sfx-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.sfx-badge {
+  font-size: 9.5px;
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.sfx-duration {
+  font-size: 9.5px;
+  color: var(--muted);
+  font-family: monospace;
+}
+
+.sfx-card-body {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.sfx-play-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.sfx-play-btn:hover {
+  background: #f97316;
+  border-color: #f97316;
+  color: #ffffff;
+}
+
+.sfx-play-icon {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.sfx-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sfx-card-footer {
+  display: flex;
+}
+
+.sfx-apply-btn {
+  width: 100%;
+  font-size: 11px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sfx-apply-btn:hover {
+  background: rgba(249, 115, 22, 0.2);
+  border-color: #f97316;
+  color: #fb923c;
+}
+
+.sfx-apply-btn.is-applied {
+  background: #f97316;
+  border-color: #f97316;
+  color: #ffffff;
+  font-weight: 600;
 }

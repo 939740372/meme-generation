@@ -72,6 +72,12 @@ export interface StudioDraft {
   imageX: number;
   imageY: number;
   imageWidth: number;
+  hasAudio?: boolean;
+  bgmOverlay?: {
+    path: string;
+    volume?: number;
+    origVolume?: number;
+  } | null;
 }
 
 export const BUILTIN_TEMPLATES: MemeTemplate[] = [

@@ -63,6 +63,29 @@ struct MediaInfo {
     width: u32,
     height: u32,
     fps: f64,
+    #[serde(default)]
+    has_audio: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct BgmOverlay {
+    path: String,
+    #[serde(default)]
+    volume: Option<f64>,
+    #[serde(default)]
+    orig_volume: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BuiltinSfx {
+    id: String,
+    name: String,
+    category: String,
+    path: String,
+    data_url: String,
+    duration: f64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -126,6 +149,10 @@ struct RenderPlan {
     include_audio: Option<bool>,
     #[serde(default)]
     hw_accel: Option<String>,
+    #[serde(default)]
+    has_audio: Option<bool>,
+    #[serde(default)]
+    bgm_overlay: Option<BgmOverlay>,
 }
 
 impl RenderPlan {
@@ -432,6 +459,8 @@ fn probe_media(path: &Path) -> CommandResult<MediaInfo> {
         .unwrap_or("video")
         .to_string();
 
+    let has_audio = check_has_audio_stream(&ffprobe_bin, &path_string);
+
     Ok(MediaInfo {
         path: path_string,
         file_name,
@@ -440,7 +469,53 @@ fn probe_media(path: &Path) -> CommandResult<MediaInfo> {
         width,
         height,
         fps,
+        has_audio,
     })
+}
+
+fn check_has_audio_stream(ffprobe_bin: &Path, path: &str) -> bool {
+    let output = Command::new(ffprobe_bin)
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=codec_type",
+            "-of",
+            "json",
+            path,
+        ])
+        .output();
+    if let Ok(out) = output {
+        if let Ok(val) = serde_json::from_slice::<Value>(&out.stdout) {
+            if let Some(arr) = val.get("streams").and_then(|s| s.as_array()) {
+                return !arr.is_empty();
+            }
+        }
+    }
+    false
+}
+
+fn check_file_has_audio(path: &Path) -> bool {
+    let ffprobe_bin = resolve_binary("ffprobe");
+    if let Ok(path_str) = path_to_string(path) {
+        check_has_audio_stream(&ffprobe_bin, &path_str)
+    } else {
+        false
+    }
+}
+
+fn input_has_audio(plan: &RenderPlan) -> bool {
+    if let Some(ha) = plan.has_audio {
+        return ha;
+    }
+    let p = Path::new(&plan.input_path);
+    if p.exists() {
+        check_file_has_audio(p)
+    } else {
+        true
+    }
 }
 
 #[tauri::command]
@@ -826,6 +901,14 @@ fn build_ffmpeg_args_with_hw(plan: &RenderPlan, hw_info: &HardwareAccelerationIn
         ]);
     }
 
+    if plan.is_mp4() {
+        if let Some(bgm) = &plan.bgm_overlay {
+            if !bgm.path.trim().is_empty() {
+                args.extend(["-i".to_string(), bgm.path.clone()]);
+            }
+        }
+    }
+
     if plan.is_webp() {
         let q_val = match plan.quality.as_deref() {
             Some("low") => "55",
@@ -904,9 +987,40 @@ fn build_ffmpeg_args_with_hw(plan: &RenderPlan, hw_info: &HardwareAccelerationIn
             ])
         };
 
+        let bgm_opt = plan.bgm_overlay.as_ref().filter(|b| !b.path.trim().is_empty());
+        let (filter_graph_final, has_bgm_mixed) = if let Some(bgm) = bgm_opt {
+            let bgm_vol = bgm.volume.unwrap_or(1.0);
+            let orig_vol = bgm.orig_volume.unwrap_or(1.0);
+            let bgm_idx = if plan.image_overlay.is_some() { 2 } else { 1 };
+            let has_orig = input_has_audio(plan) && plan.include_audio.unwrap_or(true) && orig_vol > 0.001;
+            let dur_str = format_secs(duration);
+
+            let mut combined = filter_graph;
+            if has_orig {
+                let orig_tempo_part = match plan.video_filter.as_deref().map(|s| s.trim().to_ascii_lowercase()) {
+                    Some(ref s) if s == "fast2x" => "atempo=2.0,",
+                    Some(ref s) if s == "slow05x" => "atempo=0.5,",
+                    Some(ref s) if s == "reverse" => "areverse,",
+                    _ => "",
+                };
+                combined.push_str(&format!(
+                    ";[0:a]{}volume={:.2}[a0];[{}:a]volume={:.2},atrim=0:{}[a1];[a0][a1]amix=inputs=2:duration=first:dropout_transition=0[aout]",
+                    orig_tempo_part, orig_vol, bgm_idx, bgm_vol, dur_str
+                ));
+            } else {
+                combined.push_str(&format!(
+                    ";[{}:a]volume={:.2},atrim=0:{}[aout]",
+                    bgm_idx, bgm_vol, dur_str
+                ));
+            }
+            (combined, true)
+        } else {
+            (filter_graph, false)
+        };
+
         args.extend([
             "-filter_complex".to_string(),
-            filter_graph,
+            filter_graph_final,
             "-map".to_string(),
             "[vout]".to_string(),
             "-c:v".to_string(),
@@ -920,33 +1034,44 @@ fn build_ffmpeg_args_with_hw(plan: &RenderPlan, hw_info: &HardwareAccelerationIn
             "+faststart".to_string(),
         ]);
 
-        let include_audio = plan.include_audio.unwrap_or(true);
-        if include_audio {
+        if has_bgm_mixed {
             args.extend([
                 "-map".to_string(),
-                "0:a?".to_string(),
+                "[aout]".to_string(),
                 "-c:a".to_string(),
                 "aac".to_string(),
                 "-b:a".to_string(),
                 "128k".to_string(),
             ]);
-
-            if let Some(vk) = &plan.video_filter {
-                match vk.trim().to_ascii_lowercase().as_str() {
-                    "fast2x" => {
-                        args.extend(["-af".to_string(), "atempo=2.0".to_string()]);
-                    }
-                    "slow05x" => {
-                        args.extend(["-af".to_string(), "atempo=0.5".to_string()]);
-                    }
-                    "reverse" => {
-                        args.extend(["-af".to_string(), "areverse".to_string()]);
-                    }
-                    _ => {}
-                }
-            }
         } else {
-            args.push("-an".to_string());
+            let include_audio = plan.include_audio.unwrap_or(true);
+            if include_audio {
+                args.extend([
+                    "-map".to_string(),
+                    "0:a?".to_string(),
+                    "-c:a".to_string(),
+                    "aac".to_string(),
+                    "-b:a".to_string(),
+                    "128k".to_string(),
+                ]);
+
+                if let Some(vk) = &plan.video_filter {
+                    match vk.trim().to_ascii_lowercase().as_str() {
+                        "fast2x" => {
+                            args.extend(["-af".to_string(), "atempo=2.0".to_string()]);
+                        }
+                        "slow05x" => {
+                            args.extend(["-af".to_string(), "atempo=0.5".to_string()]);
+                        }
+                        "reverse" => {
+                            args.extend(["-af".to_string(), "areverse".to_string()]);
+                        }
+                        _ => {}
+                    }
+                }
+            } else {
+                args.push("-an".to_string());
+            }
         }
 
         args.push(plan.output_path.clone());
@@ -1316,6 +1441,14 @@ fn read_file_as_data_url(path: String) -> CommandResult<String> {
         "image/avif"
     } else if lower.ends_with(".mp4") {
         "video/mp4"
+    } else if lower.ends_with(".mp3") {
+        "audio/mpeg"
+    } else if lower.ends_with(".wav") {
+        "audio/wav"
+    } else if lower.ends_with(".ogg") {
+        "audio/ogg"
+    } else if lower.ends_with(".m4a") || lower.ends_with(".aac") {
+        "audio/mp4"
     } else {
         "image/gif"
     };
@@ -1425,6 +1558,88 @@ fn get_builtin_stickers() -> CommandResult<Vec<BuiltinSticker>> {
     Ok(result)
 }
 
+struct SfxDef {
+    id: &'static str,
+    name: &'static str,
+    category: &'static str,
+    filename: &'static str,
+    duration: f64,
+}
+
+const BUILTIN_SFX: &[SfxDef] = &[
+    SfxDef { id: "censor_bleep", name: "消音哔哔", category: "reaction", filename: "censor_bleep.mp3", duration: 0.8 },
+    SfxDef { id: "crisp_ding", name: "绝了清脆叮", category: "reaction", filename: "crisp_ding.mp3", duration: 0.8 },
+    SfxDef { id: "boom_808", name: "震撼低音808", category: "drama", filename: "boom_808.mp3", duration: 1.2 },
+    SfxDef { id: "alarm_danger", name: "高能警报", category: "drama", filename: "alarm_danger.mp3", duration: 1.5 },
+    SfxDef { id: "boing_spring", name: "弹簧搞笑", category: "funny", filename: "boing_spring.mp3", duration: 0.8 },
+    SfxDef { id: "victory_cheer", name: "欢呼和弦", category: "funny", filename: "victory_cheer.mp3", duration: 1.6 },
+    SfxDef { id: "face_slap", name: "打脸啪啪", category: "reaction", filename: "face_slap.mp3", duration: 0.35 },
+    SfxDef { id: "goofy_laugh", name: "滑稽笑声", category: "funny", filename: "goofy_laugh.mp3", duration: 1.5 },
+];
+
+fn resolve_sfx_dir() -> Option<PathBuf> {
+    if let Ok(val) = env::var("MEME_STUDIO_SFX_DIR") {
+        let p = PathBuf::from(val);
+        if p.is_dir() {
+            return Some(p);
+        }
+    }
+
+    if let Ok(current_exe) = env::current_exe() {
+        if let Some(exe_dir) = current_exe.parent() {
+            let prod_candidates = [
+                exe_dir.join("sfx"),
+                exe_dir.join("../Resources/sfx"),
+                exe_dir.join("../Resources"),
+            ];
+            for cand in prod_candidates {
+                if cand.is_dir() && cand.join("censor_bleep.mp3").exists() {
+                    return Some(cand);
+                }
+            }
+        }
+    }
+
+    let dev_candidates = [
+        PathBuf::from("src-tauri").join("sfx"),
+        PathBuf::from("sfx"),
+        PathBuf::from("..").join("src-tauri").join("sfx"),
+        PathBuf::from("..").join("sfx"),
+    ];
+    for cand in dev_candidates {
+        if cand.is_dir() && cand.join("censor_bleep.mp3").exists() {
+            return Some(cand);
+        }
+    }
+    None
+}
+
+#[tauri::command]
+fn get_builtin_sfx() -> CommandResult<Vec<BuiltinSfx>> {
+    let dir = resolve_sfx_dir().ok_or_else(|| {
+        app_error("SFX_DIR_NOT_FOUND", "找不到内置音效素材目录。")
+    })?;
+
+    let mut result = Vec::with_capacity(BUILTIN_SFX.len());
+    for def in BUILTIN_SFX {
+        let file_path = dir.join(def.filename);
+        if !file_path.exists() {
+            continue;
+        }
+        let path_str = path_to_string(&file_path)?;
+        let data_url = read_file_as_data_url(path_str.clone())?;
+        result.push(BuiltinSfx {
+            id: def.id.to_string(),
+            name: def.name.to_string(),
+            category: def.category.to_string(),
+            path: path_str,
+            data_url,
+            duration: def.duration,
+        });
+    }
+    Ok(result)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1440,6 +1655,7 @@ pub fn run() {
             copy_file_to_clipboard,
             read_file_as_data_url,
             get_builtin_stickers,
+            get_builtin_sfx,
             get_hardware_acceleration_info
         ])
         .run(tauri::generate_context!())
@@ -1668,6 +1884,7 @@ mod tests {
             video_filter: None,
             include_audio: None,
             hw_accel: None,
+            ..Default::default()
         };
         let graph = build_filter_graph(&plan);
         assert!(!graph.contains("palettegen"));
@@ -1702,6 +1919,7 @@ mod tests {
             video_filter: None,
             include_audio: None,
             hw_accel: None,
+            ..Default::default()
         };
 
         // 1. Grayscale
@@ -1742,6 +1960,7 @@ mod tests {
             width: 1280,
             height: 720,
             fps: 30.0,
+            has_audio: false,
         };
 
         let temp_dir = env::temp_dir();
@@ -1807,6 +2026,7 @@ mod tests {
             video_filter: None,
             include_audio: Some(true),
             hw_accel: None,
+            ..Default::default()
         };
         let graph = build_filter_graph(&plan);
         assert!(!graph.contains("palettegen"));
@@ -1842,6 +2062,7 @@ mod tests {
             video_filter: None,
             include_audio: Some(false),
             hw_accel: None,
+            ..Default::default()
         };
         let args = build_ffmpeg_args(&plan);
         assert!(args.iter().any(|arg| arg == "-an"));
@@ -1867,6 +2088,7 @@ mod tests {
             video_filter: Some("fast2x".to_string()),
             include_audio: Some(true),
             hw_accel: None,
+            ..Default::default()
         };
 
         // 1. fast2x -> atempo=2.0
@@ -2020,5 +2242,143 @@ mod tests {
         assert!(args.iter().any(|a| a == "-crf"));
         assert!(args.iter().any(|a| a == "23"));
         assert!(!args.iter().any(|a| a == "h264_videotoolbox"));
+    }
+
+    #[test]
+    fn read_file_as_data_url_encodes_mp3_file() {
+        let temp_dir = env::temp_dir();
+        let test_file = temp_dir.join("test_sample.mp3");
+        fs::write(&test_file, b"ID3\x04\x00\x00\x00\x00\x00\x00").unwrap();
+        let res = read_file_as_data_url(test_file.to_string_lossy().to_string());
+        assert!(res.is_ok());
+        let url = res.unwrap();
+        assert!(url.starts_with("data:audio/mpeg;base64,"));
+        let _ = fs::remove_file(test_file);
+    }
+
+    #[test]
+    fn resolves_sfx_dir_and_loads_builtin_sfx() {
+        let sfx_res = get_builtin_sfx();
+        assert!(sfx_res.is_ok(), "get_builtin_sfx should succeed");
+        let list = sfx_res.unwrap();
+        assert_eq!(list.len(), 8, "Should load all 8 builtin sfx files");
+        assert!(list.iter().any(|s| s.id == "censor_bleep"));
+        assert!(list.iter().any(|s| s.id == "crisp_ding"));
+        assert!(list.iter().any(|s| s.id == "boom_808"));
+        assert!(list.iter().any(|s| s.id == "alarm_danger"));
+        assert!(list.iter().any(|s| s.id == "boing_spring"));
+        assert!(list.iter().any(|s| s.id == "victory_cheer"));
+        assert!(list.iter().any(|s| s.id == "face_slap"));
+        assert!(list.iter().any(|s| s.id == "goofy_laugh"));
+        for s in &list {
+            assert!(s.data_url.starts_with("data:audio/mpeg;base64,"));
+            assert!(Path::new(&s.path).exists());
+            assert!(s.duration > 0.0);
+        }
+    }
+
+    #[test]
+    fn builds_mp4_args_with_bgm_mixing() {
+        let plan = RenderPlan {
+            input_path: "input.mp4".to_string(),
+            output_path: "output.mp4".to_string(),
+            start_secs: 0.0,
+            end_secs: 2.0,
+            output_width: 320,
+            fps: 20,
+            format: Some("mp4".to_string()),
+            has_audio: Some(true),
+            include_audio: Some(true),
+            bgm_overlay: Some(BgmOverlay {
+                path: "test_bgm.mp3".to_string(),
+                volume: Some(0.8),
+                orig_volume: Some(0.5),
+            }),
+            ..Default::default()
+        };
+
+        let args = build_ffmpeg_args(&plan);
+        // BGM input should be passed
+        let bgm_pos = args.iter().position(|a| a == "test_bgm.mp3").expect("BGM input exists");
+        assert_eq!(args[bgm_pos - 1], "-i");
+
+        // Filter graph should contain amix
+        let fc_pos = args.iter().position(|a| a == "-filter_complex").expect("-filter_complex exists");
+        let fc = &args[fc_pos + 1];
+        assert!(fc.contains("amix=inputs=2:duration=first:dropout_transition=0"));
+        assert!(fc.contains("volume=0.50[a0]"));
+        assert!(fc.contains("[1:a]volume=0.80,atrim=0:2.000[a1]"));
+        assert!(fc.contains("[aout]"));
+
+        // Audio mapping should map [aout]
+        let aout_pos = args.iter().position(|a| a == "[aout]").expect("[aout] mapped");
+        assert_eq!(args[aout_pos - 1], "-map");
+        assert!(args.iter().any(|a| a == "aac"));
+    }
+
+    #[test]
+    fn builds_mp4_args_with_bgm_when_orig_muted_or_no_audio() {
+        let plan = RenderPlan {
+            input_path: "input.mp4".to_string(),
+            output_path: "output.mp4".to_string(),
+            start_secs: 0.0,
+            end_secs: 1.5,
+            output_width: 320,
+            fps: 20,
+            format: Some("mp4".to_string()),
+            has_audio: Some(false),
+            include_audio: Some(true),
+            bgm_overlay: Some(BgmOverlay {
+                path: "test_bgm.mp3".to_string(),
+                volume: Some(0.9),
+                orig_volume: Some(1.0),
+            }),
+            ..Default::default()
+        };
+
+        let args = build_ffmpeg_args(&plan);
+        let fc_pos = args.iter().position(|a| a == "-filter_complex").expect("-filter_complex exists");
+        let fc = &args[fc_pos + 1];
+        // Must NOT reference [0:a] or amix when original has no audio!
+        assert!(!fc.contains("[0:a]"));
+        assert!(!fc.contains("amix"));
+        assert!(fc.contains("[1:a]volume=0.90,atrim=0:1.500[aout]"));
+        assert!(args.iter().any(|a| a == "[aout]"));
+    }
+
+    #[test]
+    fn builds_mp4_args_with_bgm_and_sticker_overlay() {
+        let plan = RenderPlan {
+            input_path: "input.mp4".to_string(),
+            output_path: "output.mp4".to_string(),
+            start_secs: 0.0,
+            end_secs: 2.0,
+            output_width: 320,
+            fps: 20,
+            format: Some("mp4".to_string()),
+            has_audio: Some(true),
+            include_audio: Some(true),
+            image_overlay: Some(ImageOverlay {
+                path: "sticker.png".to_string(),
+                x: 10,
+                y: 10,
+                width: 100,
+            }),
+            bgm_overlay: Some(BgmOverlay {
+                path: "test_bgm.mp3".to_string(),
+                volume: Some(1.0),
+                orig_volume: Some(1.0),
+            }),
+            ..Default::default()
+        };
+
+        let args = build_ffmpeg_args(&plan);
+        // Input 0: input.mp4, Input 1: sticker.png, Input 2: test_bgm.mp3
+        let fc_pos = args.iter().position(|a| a == "-filter_complex").expect("-filter_complex exists");
+        let fc = &args[fc_pos + 1];
+        // BGM input index should be 2!
+        assert!(fc.contains("[2:a]volume=1.00,atrim=0:2.000[a1]"));
+        assert!(fc.contains("[0:a]volume=1.00[a0]"));
+        assert!(fc.contains("amix=inputs=2:duration=first:dropout_transition=0"));
     }
 }
