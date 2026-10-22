@@ -348,6 +348,143 @@ function startDragImage(event: PointerEvent): void {
   window.addEventListener("pointerup", onPointerUp);
 }
 
+const cropDisplayLeft = computed(() => {
+  if (!media.value || stageSize.width <= 0) return crop.x;
+  return crop.x * (stageSize.width / media.value.width);
+});
+
+const cropDisplayTop = computed(() => {
+  if (!media.value || stageSize.height <= 0) return crop.y;
+  return crop.y * (stageSize.height / media.value.height);
+});
+
+const cropDisplayWidth = computed(() => {
+  if (!media.value || stageSize.width <= 0) return crop.width;
+  return Math.max(16, crop.width * (stageSize.width / media.value.width));
+});
+
+const cropDisplayHeight = computed(() => {
+  if (!media.value || stageSize.height <= 0) return crop.height;
+  return Math.max(16, crop.height * (stageSize.height / media.value.height));
+});
+
+const isCropNearTop = computed(() => cropDisplayTop.value < 28);
+
+const isDraggingCrop = ref(false);
+const activeCropHandle = ref<string | null>(null);
+
+function startDragCrop(event: PointerEvent): void {
+  if (!media.value || !stageRef.value) return;
+  event.preventDefault();
+  event.stopPropagation();
+  isDraggingCrop.value = true;
+  activeCropHandle.value = "move";
+
+  const startClientX = event.clientX;
+  const startClientY = event.clientY;
+  const initX = crop.x;
+  const initY = crop.y;
+  const scaleX = stageRef.value.clientWidth / media.value.width;
+  const scaleY = stageRef.value.clientHeight / media.value.height;
+  const maxX = Math.max(0, media.value.width - crop.width);
+  const maxY = Math.max(0, media.value.height - crop.height);
+
+  const onPointerMove = (e: PointerEvent): void => {
+    const deltaX = (e.clientX - startClientX) / scaleX;
+    const deltaY = (e.clientY - startClientY) / scaleY;
+    crop.x = Math.max(0, Math.min(maxX, Math.round(initX + deltaX)));
+    crop.y = Math.max(0, Math.min(maxY, Math.round(initY + deltaY)));
+  };
+
+  const onPointerUp = (): void => {
+    isDraggingCrop.value = false;
+    activeCropHandle.value = null;
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", onPointerUp);
+  };
+
+  window.addEventListener("pointermove", onPointerMove);
+  window.addEventListener("pointerup", onPointerUp);
+}
+
+function startResizeCrop(handle: string, event: PointerEvent): void {
+  if (!media.value || !stageRef.value) return;
+  event.preventDefault();
+  event.stopPropagation();
+  isDraggingCrop.value = true;
+  activeCropHandle.value = handle;
+
+  const startClientX = event.clientX;
+  const startClientY = event.clientY;
+  const initX = crop.x;
+  const initY = crop.y;
+  const initW = crop.width;
+  const initH = crop.height;
+  const scaleX = stageRef.value.clientWidth / media.value.width;
+  const scaleY = stageRef.value.clientHeight / media.value.height;
+  const minW = 20;
+  const minH = 20;
+  const mediaW = media.value.width;
+  const mediaH = media.value.height;
+
+  const onPointerMove = (e: PointerEvent): void => {
+    const deltaX = (e.clientX - startClientX) / scaleX;
+    const deltaY = (e.clientY - startClientY) / scaleY;
+
+    if (handle.includes("e")) {
+      const maxW = mediaW - initX;
+      crop.width = Math.max(minW, Math.min(maxW, Math.round(initW + deltaX)));
+    } else if (handle.includes("w")) {
+      const targetX = Math.round(initX + deltaX);
+      const clampedX = Math.max(0, Math.min(initX + initW - minW, targetX));
+      crop.x = clampedX;
+      crop.width = Math.round(initW + (initX - clampedX));
+    }
+
+    if (handle.includes("s")) {
+      const maxH = mediaH - initY;
+      crop.height = Math.max(minH, Math.min(maxH, Math.round(initH + deltaY)));
+    } else if (handle.includes("n")) {
+      const targetY = Math.round(initY + deltaY);
+      const clampedY = Math.max(0, Math.min(initY + initH - minH, targetY));
+      crop.y = clampedY;
+      crop.height = Math.round(initH + (initY - clampedY));
+    }
+  };
+
+  const onPointerUp = (): void => {
+    isDraggingCrop.value = false;
+    activeCropHandle.value = null;
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", onPointerUp);
+  };
+
+  window.addEventListener("pointermove", onPointerMove);
+  window.addEventListener("pointerup", onPointerUp);
+}
+
+function cropCenter(): void {
+  if (!media.value) return;
+  crop.x = Math.max(0, Math.floor((media.value.width - crop.width) / 2));
+  crop.y = Math.max(0, Math.floor((media.value.height - crop.height) / 2));
+}
+
+function cropSquare(): void {
+  if (!media.value) return;
+  const side = Math.min(media.value.width, media.value.height, crop.width || 320);
+  crop.width = side;
+  crop.height = side;
+  cropCenter();
+}
+
+function cropReset(): void {
+  if (!media.value) return;
+  crop.x = 0;
+  crop.y = 0;
+  crop.width = media.value.width;
+  crop.height = media.value.height;
+}
+
 const isDesktop = computed(() => isDesktopRuntime());
 const isBusy = computed(() => status.value === "probing" || status.value === "rendering");
 const canRender = computed(
@@ -1036,7 +1173,49 @@ onBeforeUnmount(() => {
                     <span v-if="isDraggingImage" class="drag-handle-pill">X: {{ imageX }} Y: {{ imageY }}</span>
                     PNG
                   </div>
-                  <div class="preview-caption">源画面 · {{ media.width }} × {{ media.height }} · 支持画布拖拽排版</div>
+
+                  <!-- 可视化矩形裁切框与九宫格遮罩层 -->
+                  <div
+                    v-if="useCrop"
+                    class="crop-box"
+                    :class="{ 'is-dragging': isDraggingCrop }"
+                    :style="{
+                      left: `${cropDisplayLeft}px`,
+                      top: `${cropDisplayTop}px`,
+                      width: `${cropDisplayWidth}px`,
+                      height: `${cropDisplayHeight}px`,
+                    }"
+                    title="按住鼠标拖拽移动选区位置"
+                    @pointerdown="startDragCrop"
+                  >
+                    <!-- 九宫格参考线 -->
+                    <div class="crop-grid-lines" aria-hidden="true">
+                      <span class="crop-line line-h-1"></span>
+                      <span class="crop-line line-h-2"></span>
+                      <span class="crop-line line-v-1"></span>
+                      <span class="crop-line line-v-2"></span>
+                    </div>
+
+                    <!-- 8 个方向调节手柄 -->
+                    <div class="crop-handle handle-nw" title="调整左上角" @pointerdown.stop="startResizeCrop('nw', $event)"></div>
+                    <div class="crop-handle handle-n" title="调整顶部" @pointerdown.stop="startResizeCrop('n', $event)"></div>
+                    <div class="crop-handle handle-ne" title="调整右上角" @pointerdown.stop="startResizeCrop('ne', $event)"></div>
+                    <div class="crop-handle handle-e" title="调整右侧" @pointerdown.stop="startResizeCrop('e', $event)"></div>
+                    <div class="crop-handle handle-se" title="调整右下角" @pointerdown.stop="startResizeCrop('se', $event)"></div>
+                    <div class="crop-handle handle-s" title="调整底部" @pointerdown.stop="startResizeCrop('s', $event)"></div>
+                    <div class="crop-handle handle-sw" title="调整左下角" @pointerdown.stop="startResizeCrop('sw', $event)"></div>
+                    <div class="crop-handle handle-w" title="调整左侧" @pointerdown.stop="startResizeCrop('w', $event)"></div>
+
+                    <!-- 尺寸指示标签 -->
+                    <div class="crop-dimension-pill" :class="{ 'pill-inside': isCropNearTop }">
+                      <span>{{ crop.width }} × {{ crop.height }}</span>
+                      <small>X: {{ crop.x }} Y: {{ crop.y }}</small>
+                    </div>
+                  </div>
+
+                  <div class="preview-caption">
+                    {{ useCrop ? `裁切中 · ${crop.width} × ${crop.height} · 可拖拽平移或缩放选区` : `源画面 · ${media.width} × ${media.height} · 支持画布拖拽排版` }}
+                  </div>
                 </div>
                 <div class="play-button" aria-hidden="true">▶</div>
               </template>
@@ -1173,12 +1352,19 @@ onBeforeUnmount(() => {
                 <label class="field"><span>宽度 · 像素</span><input v-model.number="outputWidth" type="number" min="32" max="1920" step="1" @input="onManualParameterChange" /></label>
                 <label class="field"><span>帧率 · FPS</span><input v-model.number="fps" type="number" min="1" max="60" step="1" @input="onManualParameterChange" /></label>
               </div>
-              <label class="toggle-row"><input v-model="useCrop" type="checkbox" /><span class="toggle-ui"></span><span>裁切</span></label>
+              <div class="crop-header-row">
+                <label class="toggle-row"><input v-model="useCrop" type="checkbox" /><span class="toggle-ui"></span><span>裁切</span><em v-if="useCrop">{{ crop.width }} × {{ crop.height }}</em></label>
+                <div v-if="useCrop" class="crop-quick-actions">
+                  <button type="button" class="crop-mini-btn" title="裁切选框居中" @click="cropCenter">居中</button>
+                  <button type="button" class="crop-mini-btn" title="1:1 正方形比例" @click="cropSquare">1:1</button>
+                  <button type="button" class="crop-mini-btn" title="重置铺满全画面" @click="cropReset">铺满</button>
+                </div>
+              </div>
               <div v-if="useCrop" class="field-grid four-up crop-grid">
                 <label class="field"><span>X</span><input v-model.number="crop.x" type="number" min="0" step="1" /></label>
                 <label class="field"><span>Y</span><input v-model.number="crop.y" type="number" min="0" step="1" /></label>
-                <label class="field"><span>W</span><input v-model.number="crop.width" type="number" min="1" step="1" /></label>
-                <label class="field"><span>H</span><input v-model.number="crop.height" type="number" min="1" step="1" /></label>
+                <label class="field"><span>W</span><input v-model.number="crop.width" type="number" min="20" step="1" /></label>
+                <label class="field"><span>H</span><input v-model.number="crop.height" type="number" min="20" step="1" /></label>
               </div>
             </div>
 
