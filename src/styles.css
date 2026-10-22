@@ -5479,3 +5479,51 @@ code {
   background: rgba(215, 244, 106, 0.2);
   border-color: var(--accent);
 }
+
+.inline-sticker-picker {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.inline-sticker-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(15, 23, 34, 0.55);
+  color: #cbd5e1;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.inline-sticker-item:hover {
+  border-color: rgba(215, 244, 106, 0.45);
+  background: rgba(215, 244, 106, 0.08);
+  color: #ffffff;
+}
+
+.inline-sticker-item.active {
+  border-color: var(--accent);
+  background: rgba(215, 244, 106, 0.14);
+  color: var(--accent);
+}
+
+.inline-sticker-item img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+
+.inline-sticker-item span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

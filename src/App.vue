@@ -323,14 +323,23 @@ function openStickersDrawer(): void {
   isDrawerOpen.value = true;
 }
 
+function getMediaScaleFactor(): number {
+  if (!media.value || media.value.width <= 0) return 1;
+  return Math.max(0.5, Math.min(4.0, media.value.width / 480));
+}
+
 function applySticker(sticker: BuiltinSticker): void {
   useImage.value = true;
   imagePath.value = sticker.path;
   imagePreviewUrl.value = sticker.dataUrl;
-  imageWidth.value = sticker.defaultWidth;
+  const scaleFactor = getMediaScaleFactor();
+  const scaledWidth = media.value
+    ? Math.max(24, Math.min(media.value.width, Math.round(sticker.defaultWidth * scaleFactor)))
+    : sticker.defaultWidth;
+  imageWidth.value = scaledWidth;
   if (media.value) {
-    imageX.value = Math.max(0, Math.round((media.value.width - sticker.defaultWidth) / 2));
-    imageY.value = Math.max(0, Math.round((media.value.height - sticker.defaultWidth) / 2));
+    imageX.value = Math.max(0, Math.round((media.value.width - scaledWidth) / 2));
+    imageY.value = Math.max(0, Math.round((media.value.height - scaledWidth) / 2));
   } else {
     imageX.value = 50;
     imageY.value = 50;
@@ -341,11 +350,12 @@ function applySticker(sticker: BuiltinSticker): void {
 }
 
 function scaleImageTo(ratio: number): void {
+  useImage.value = true;
   if (!media.value) {
     imageWidth.value = Math.round(120 * ratio);
     return;
   }
-  const base = Math.min(media.value.width, 160);
+  const base = Math.round(130 * getMediaScaleFactor());
   imageWidth.value = Math.max(20, Math.min(media.value.width, Math.round(base * ratio)));
 }
 
@@ -577,19 +587,25 @@ const activeLayer = computed(() => {
 
 function addTextLayer(): void {
   if (textLayers.value.length >= 4) return;
+  useText.value = true;
   const newIndex = textLayers.value.length + 1;
   const id = `layer-${Date.now()}`;
+  const scaleFactor = getMediaScaleFactor();
+  const scaledSize = Math.min(512, Math.max(12, Math.round(32 * scaleFactor)));
+  const scaledStroke = Math.max(1, Math.round(2 * scaleFactor));
+  const stepY = Math.round(56 * scaleFactor);
+  const defaultX = media.value ? Math.max(16, Math.round(media.value.width * 0.08)) : 24;
   const defaultY = media.value
-    ? Math.min(media.value.height - 40, 24 + (newIndex - 1) * 60)
+    ? Math.min(media.value.height - scaledSize - 12, Math.round(24 * scaleFactor) + (newIndex - 1) * stepY)
     : 24 + (newIndex - 1) * 60;
   const newLayer: CanvasTextLayer = {
     id,
     text: newIndex === 2 ? "第二行吐槽" : `文字图层 ${newIndex}`,
-    x: 24,
+    x: defaultX,
     y: defaultY,
-    size: 32,
+    size: scaledSize,
     color: "#ffffff",
-    strokeWidth: 2,
+    strokeWidth: scaledStroke,
     strokeColor: "#000000",
     useBox: false,
     boxColor: "#000000",
@@ -622,7 +638,14 @@ function toggleLayerVisibility(layer: CanvasTextLayer): void {
 
 const text = computed({
   get: () => activeLayer.value?.text ?? "",
-  set: (v: string) => { if (activeLayer.value) activeLayer.value.text = v; },
+  set: (v: string) => {
+    if (activeLayer.value) {
+      activeLayer.value.text = v;
+      if (v.trim().length > 0 && !isRestoringDraft) {
+        useText.value = true;
+      }
+    }
+  },
 });
 const textX = computed({
   get: () => activeLayer.value?.x ?? 0,
@@ -634,23 +657,48 @@ const textY = computed({
 });
 const textSize = computed({
   get: () => activeLayer.value?.size ?? 28,
-  set: (v: number) => { if (activeLayer.value) activeLayer.value.size = v; },
+  set: (v: number) => {
+    if (activeLayer.value) {
+      activeLayer.value.size = v;
+      if (!isRestoringDraft) useText.value = true;
+    }
+  },
 });
 const textColor = computed({
   get: () => activeLayer.value?.color ?? "#ffffff",
-  set: (v: string) => { if (activeLayer.value) activeLayer.value.color = v; },
+  set: (v: string) => {
+    if (activeLayer.value) {
+      activeLayer.value.color = v;
+      if (!isRestoringDraft) useText.value = true;
+    }
+  },
 });
 const textStrokeWidth = computed({
   get: () => activeLayer.value?.strokeWidth ?? 0,
-  set: (v: number) => { if (activeLayer.value) activeLayer.value.strokeWidth = v; },
+  set: (v: number) => {
+    if (activeLayer.value) {
+      activeLayer.value.strokeWidth = v;
+      if (!isRestoringDraft) useText.value = true;
+    }
+  },
 });
 const textStrokeColor = computed({
   get: () => activeLayer.value?.strokeColor ?? "#000000",
-  set: (v: string) => { if (activeLayer.value) activeLayer.value.strokeColor = v; },
+  set: (v: string) => {
+    if (activeLayer.value) {
+      activeLayer.value.strokeColor = v;
+      if (!isRestoringDraft) useText.value = true;
+    }
+  },
 });
 const textUseBox = computed({
   get: () => activeLayer.value?.useBox ?? false,
-  set: (v: boolean) => { if (activeLayer.value) activeLayer.value.useBox = v; },
+  set: (v: boolean) => {
+    if (activeLayer.value) {
+      activeLayer.value.useBox = v;
+      if (!isRestoringDraft) useText.value = true;
+    }
+  },
 });
 const textBoxColor = computed({
   get: () => activeLayer.value?.boxColor ?? "#000000",
@@ -662,19 +710,39 @@ const textBoxOpacity = computed({
 });
 const textRotation = computed({
   get: () => activeLayer.value?.rotation ?? 0,
-  set: (v: number) => { if (activeLayer.value) activeLayer.value.rotation = v; },
+  set: (v: number) => {
+    if (activeLayer.value) {
+      activeLayer.value.rotation = v;
+      if (!isRestoringDraft) useText.value = true;
+    }
+  },
 });
 const textArcRadius = computed({
   get: () => activeLayer.value?.arcRadius ?? 0,
-  set: (v: number) => { if (activeLayer.value) activeLayer.value.arcRadius = v; },
+  set: (v: number) => {
+    if (activeLayer.value) {
+      activeLayer.value.arcRadius = v;
+      if (!isRestoringDraft) useText.value = true;
+    }
+  },
 });
 const textIsItalic = computed({
   get: () => activeLayer.value?.isItalic ?? false,
-  set: (v: boolean) => { if (activeLayer.value) activeLayer.value.isItalic = v; },
+  set: (v: boolean) => {
+    if (activeLayer.value) {
+      activeLayer.value.isItalic = v;
+      if (!isRestoringDraft) useText.value = true;
+    }
+  },
 });
 const textShadowOffset = computed({
   get: () => activeLayer.value?.shadowOffset ?? 0,
-  set: (v: number) => { if (activeLayer.value) activeLayer.value.shadowOffset = v; },
+  set: (v: number) => {
+    if (activeLayer.value) {
+      activeLayer.value.shadowOffset = v;
+      if (!isRestoringDraft) useText.value = true;
+    }
+  },
 });
 const textShadowColor = computed({
   get: () => activeLayer.value?.shadowColor ?? "#000000",
@@ -699,6 +767,23 @@ const imagePath = ref("");
 const imageX = ref(24);
 const imageY = ref(24);
 const imageWidth = ref(120);
+
+watch(useImage, (enabled) => {
+  if (enabled && !imagePath.value && builtinStickers.value.length > 0 && !isRestoringDraft) {
+    const first = builtinStickers.value[0];
+    imagePath.value = first.path;
+    imagePreviewUrl.value = first.dataUrl;
+    const scaleFactor = getMediaScaleFactor();
+    const scaledWidth = media.value
+      ? Math.max(24, Math.min(media.value.width, Math.round(first.defaultWidth * scaleFactor)))
+      : first.defaultWidth;
+    imageWidth.value = scaledWidth;
+    if (media.value) {
+      imageX.value = Math.max(0, Math.round((media.value.width - scaledWidth) / 2));
+      imageY.value = Math.max(0, Math.round((media.value.height - scaledWidth) / 2));
+    }
+  }
+});
 
 // 画面画风与速度特效
 export type VideoFilterKey =
@@ -818,7 +903,7 @@ function getTextLayerStyle(layer: CanvasTextLayer): Record<string, string | numb
   if (media.value && scale > 0) {
     left = Math.round(layer.x * scale);
     top = Math.round(layer.y * scale);
-    fontSize = Math.max(10, Math.min(Math.round(layer.size * scale), 120));
+    fontSize = Math.max(10, Math.min(Math.round(layer.size * scale), 240));
     if (strokeW > 0) {
       strokeW = Math.max(1, Math.round(layer.strokeWidth * scale));
     }
@@ -1364,6 +1449,20 @@ function applyMediaDefaults(nextMedia: MediaInfo): void {
   crop.y = 0;
   crop.width = nextMedia.width;
   crop.height = nextMedia.height;
+
+  // 若当前尚未启用文字图层且仅有默认图层，按源视频分辨率自适应设置合理的默认字号与位置
+  const scaleFactor = Math.max(0.5, Math.min(4.0, nextMedia.width / 480));
+  if (!useText.value && textLayers.value.length === 1) {
+    const firstLayer = textLayers.value[0];
+    const scaledSize = Math.min(512, Math.max(16, Math.round(38 * scaleFactor)));
+    const scaledStroke = Math.max(2, Math.round(2.5 * scaleFactor));
+    const estW = Math.max(1, firstLayer.text.length) * scaledSize;
+    firstLayer.size = scaledSize;
+    firstLayer.strokeWidth = scaledStroke;
+    firstLayer.x = Math.max(16, Math.round((nextMedia.width - estW) / 2));
+    firstLayer.y = Math.max(16, Math.round(nextMedia.height * 0.78));
+  }
+
   nextTick(() => {
     updateStageSize();
   });
@@ -1488,6 +1587,8 @@ function buildRenderPlan(): RenderPlan {
         : null,
     hasAudio: media.value?.hasAudio ?? true,
     bgmOverlay: bgmOverlay.value,
+    sourceWidth: media.value?.width,
+    sourceHeight: media.value?.height,
   };
 }
 
@@ -2206,9 +2307,16 @@ function applyTemplate(tpl: MemeTemplate): void {
   if (!text.value.trim() || text.value === "输入文字") {
     text.value = tpl.textStyle.defaultText || "输入文字";
   }
-  textSize.value = tpl.textStyle.size;
+  const scaleFactor = getMediaScaleFactor();
+  const scaledSize = Math.min(512, Math.max(12, Math.round(tpl.textStyle.size * scaleFactor)));
+  const scaledStroke =
+    tpl.textStyle.strokeWidth > 0 ? Math.max(1, Math.round(tpl.textStyle.strokeWidth * scaleFactor)) : 0;
+  const rawShadow = tpl.textStyle.shadowOffset ?? 0;
+  const scaledShadow = rawShadow > 0 ? Math.max(1, Math.round(rawShadow * scaleFactor)) : 0;
+
+  textSize.value = scaledSize;
   textColor.value = tpl.textStyle.color;
-  textStrokeWidth.value = tpl.textStyle.strokeWidth;
+  textStrokeWidth.value = scaledStroke;
   textStrokeColor.value = tpl.textStyle.strokeColor;
   textUseBox.value = tpl.textStyle.useBox;
   textBoxColor.value = tpl.textStyle.boxColor;
@@ -2216,12 +2324,15 @@ function applyTemplate(tpl: MemeTemplate): void {
   textRotation.value = tpl.textStyle.rotation ?? 0;
   textArcRadius.value = tpl.textStyle.arcRadius ?? 0;
   textIsItalic.value = Boolean(tpl.textStyle.isItalic);
-  textShadowOffset.value = tpl.textStyle.shadowOffset ?? 0;
+  textShadowOffset.value = scaledShadow;
   textShadowColor.value = tpl.textStyle.shadowColor ?? "#000000";
 
   if (media.value) {
-    textX.value = Math.max(0, Math.round(media.value.width * tpl.textStyle.positionRatio.x));
-    textY.value = Math.max(0, Math.round(media.value.height * tpl.textStyle.positionRatio.y));
+    const estTextW = Math.max(1, text.value.length) * scaledSize;
+    const rawX = Math.round(media.value.width * tpl.textStyle.positionRatio.x - estTextW / 2);
+    const rawY = Math.round(media.value.height * tpl.textStyle.positionRatio.y - scaledSize / 2);
+    textX.value = Math.max(8, Math.min(Math.max(8, media.value.width - 20), rawX));
+    textY.value = Math.max(8, Math.min(Math.max(8, media.value.height - scaledSize), rawY));
   }
 
   if (tpl.suggestedPresetId) {
@@ -2284,6 +2395,8 @@ function buildCurrentDraft(): StudioDraft {
     imageWidth: Number(imageWidth.value),
     hasAudio: media.value?.hasAudio ?? true,
     bgmOverlay: bgmOverlay.value,
+    sourceWidth: media.value?.width,
+    sourceHeight: media.value?.height,
   };
 }
 
@@ -3148,13 +3261,17 @@ onBeforeUnmount(() => {
                       <button type="button" class="template-link-btn" title="浏览表情包排版模板库" @click="openTemplatesDrawer">
                         📑 模板库
                       </button>
-                      <button v-if="useText" type="button" class="template-link-btn" title="将当前文字样式存为模板" @click="openSaveTemplateModal">
+                      <button type="button" class="template-link-btn" title="将当前文字样式存为模板" @click="openSaveTemplateModal">
                         ＋ 存为模板
                       </button>
                     </div>
                   </div>
 
-                  <div v-if="useText" class="text-editor-stack">
+                  <p v-if="!useText" class="inspector-empty-note" style="margin-bottom: 10px">
+                    💡 输入或修改下方台词将自动开启画布字幕，也可点击右上角「模板库」一键套用经典字幕。
+                  </p>
+
+                  <div class="text-editor-stack">
                     <!-- 多图层切换栏 -->
                     <div class="layer-tabs-bar">
                       <div class="layer-tabs-list">
@@ -3164,7 +3281,7 @@ onBeforeUnmount(() => {
                           type="button"
                           class="layer-tab-btn"
                           :class="{ 'is-active': activeLayerId === layer.id, 'is-hidden': !layer.visible }"
-                          @click="activeLayerId = layer.id"
+                          @click="activeLayerId = layer.id; useText = true"
                         >
                           <span class="tab-tag">T{{ index + 1 }}</span>
                           <span class="tab-snippet">{{ layer.text || '未命名' }}</span>
@@ -3201,14 +3318,14 @@ onBeforeUnmount(() => {
                     <!-- 台词内容输入 -->
                     <label class="field">
                       <span>台词内容（可在画布直接拖拽位置）</span>
-                      <input v-model="text" type="text" maxlength="80" placeholder="输入表情包台词…" />
+                      <input v-model="text" type="text" maxlength="80" placeholder="输入表情包台词…" @focus="useText = true" />
                     </label>
 
                     <!-- 核心外观：字号、文字色、描边宽、描边色 -->
                     <div class="field-grid four-up">
-                      <label class="field"><span>字号</span><input v-model.number="textSize" type="number" min="8" max="192" step="1" /></label>
+                      <label class="field"><span>字号</span><input v-model.number="textSize" type="number" min="8" max="512" step="1" /></label>
                       <label class="field color-field"><span>文字色</span><input v-model="textColor" type="color" /></label>
-                      <label class="field"><span>描边宽</span><input v-model.number="textStrokeWidth" type="number" min="0" max="12" step="1" /></label>
+                      <label class="field"><span>描边宽</span><input v-model.number="textStrokeWidth" type="number" min="0" max="24" step="1" /></label>
                       <label class="field color-field"><span>描边色</span><input v-model="textStrokeColor" type="color" /></label>
                     </div>
 
@@ -3311,7 +3428,7 @@ onBeforeUnmount(() => {
                                   v-model.number="textShadowOffset"
                                   type="number"
                                   min="0"
-                                  max="20"
+                                  max="40"
                                   step="1"
                                   class="shadow-offset-input"
                                   placeholder="0"
@@ -3338,7 +3455,6 @@ onBeforeUnmount(() => {
                       <label class="field"><span>纵坐标 Y</span><input v-model.number="textY" type="number" min="0" step="1" /></label>
                     </div>
                   </div>
-                  <p v-else class="inspector-empty-note">开启后可添加最多 4 个独立文字图层，或点击右上角「模板库」一键套用经典字幕。</p>
                 </div>
               </div>
 
@@ -3353,7 +3469,7 @@ onBeforeUnmount(() => {
                       <strong>透明表情贴纸</strong>
                     </label>
                     <div class="sticker-header-actions">
-                      <button class="inline-button sticker-lib-btn" type="button" @click="openStickersDrawer">🎨 贴纸库</button>
+                      <button class="inline-button sticker-lib-btn" type="button" @click="openStickersDrawer">🎨 全部贴纸</button>
                       <button class="inline-button" type="button" @click="chooseImage">{{ imagePath ? "换 PNG" : "本地 PNG" }}</button>
                     </div>
                   </div>
@@ -3386,10 +3502,26 @@ onBeforeUnmount(() => {
                     <div v-if="showExactStickerCoords" class="field-grid three-up collapsible-content">
                       <label class="field"><span>X</span><input v-model.number="imageX" type="number" min="0" step="1" /></label>
                       <label class="field"><span>Y</span><input v-model.number="imageY" type="number" min="0" step="1" /></label>
-                      <label class="field"><span>宽 W</span><input v-model.number="imageWidth" type="number" min="20" max="1920" step="1" /></label>
+                      <label class="field"><span>宽 W</span><input v-model.number="imageWidth" type="number" min="20" max="3840" step="1" /></label>
                     </div>
                   </div>
-                  <p v-else class="inspector-empty-note">点击「贴纸库」选用 18 款内置免抠贴纸，或导入本地透明 PNG。</p>
+                  <p v-else class="inspector-empty-note">点击下方热门贴纸即可直接叠加到画面中央，或导入本地透明 PNG：</p>
+
+                  <!-- 内嵌贴纸快捷点选网格 -->
+                  <div v-if="builtinStickers.length > 0" class="inline-sticker-picker">
+                    <button
+                      v-for="st in builtinStickers.slice(0, 8)"
+                      :key="st.id"
+                      type="button"
+                      class="inline-sticker-item"
+                      :class="{ active: useImage && imagePath === st.path }"
+                      :title="`点击叠加「${st.name}」`"
+                      @click="applySticker(st)"
+                    >
+                      <img :src="st.dataUrl" :alt="st.name" />
+                      <span>{{ st.name }}</span>
+                    </button>
+                  </div>
                 </div>
 
                 <!-- 声音与音效混流卡片 -->

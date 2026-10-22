@@ -166,6 +166,10 @@ struct RenderPlan {
     has_audio: Option<bool>,
     #[serde(default)]
     bgm_overlay: Option<BgmOverlay>,
+    #[serde(default)]
+    source_width: Option<u32>,
+    #[serde(default)]
+    source_height: Option<u32>,
 }
 
 impl RenderPlan {
@@ -329,7 +333,13 @@ fn resolve_binary(name: &str) -> PathBuf {
 fn detect_system_font() -> Option<String> {
     let candidates: &[&str] = if cfg!(target_os = "macos") {
         &[
+            "/System/Library/Fonts/STHeiti Medium.ttc",
+            "/System/Library/Fonts/Hiragino Sans GB.ttc",
+            "/System/Library/Fonts/STHeiti Light.ttc",
             "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/Supplemental/Songti.ttc",
+            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+            "/Library/Fonts/Arial Unicode.ttf",
             "/System/Library/Fonts/Helvetica.ttc",
             "/System/Library/Fonts/Supplemental/Arial.ttf",
             "/Library/Fonts/Arial.ttf",
@@ -342,9 +352,9 @@ fn detect_system_font() -> Option<String> {
         ]
     } else {
         &[
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
             "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
             "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         ]
     };
 
@@ -590,7 +600,7 @@ fn validate_render_plan(plan: &RenderPlan, media: &MediaInfo) -> CommandResult<(
         if text.text.chars().any(char::is_control) {
             return Err(app_error("INVALID_TEXT", "文字叠加不能包含控制字符。"));
         }
-        if !(8..=192).contains(&text.size) || !is_hex_color(&text.color) {
+        if !(8..=512).contains(&text.size) || !is_hex_color(&text.color) {
             return Err(app_error("INVALID_TEXT_STYLE", "文字字号或颜色格式无效。"));
         }
         if let Some(stroke_c) = &text.stroke_color {
@@ -636,8 +646,8 @@ fn validate_render_plan(plan: &RenderPlan, media: &MediaInfo) -> CommandResult<(
         {
             return Err(app_error("INVALID_IMAGE", "图案叠加目前只支持 PNG 文件。"));
         }
-        if image.width == 0 || image.width > 1920 {
-            return Err(app_error("INVALID_IMAGE_SIZE", "图案宽度必须在 1 到 1920 之间。"));
+        if image.width == 0 || image.width > 3840 {
+            return Err(app_error("INVALID_IMAGE_SIZE", "图案宽度必须在 1 到 3840 之间。"));
         }
     }
 
@@ -790,8 +800,88 @@ fn map_video_filter(key: &str) -> Option<&'static str> {
     }
 }
 
+fn scale_text_overlay(text: &TextOverlay, crop_x: u32, crop_y: u32, scale_factor: f64) -> TextOverlay {
+    if (scale_factor - 1.0).abs() < 1e-6 && crop_x == 0 && crop_y == 0 {
+        return text.clone();
+    }
+    let rel_x = (text.x as f64 - crop_x as f64) * scale_factor;
+    let rel_y = (text.y as f64 - crop_y as f64) * scale_factor;
+    let scaled_x = rel_x.round().max(0.0) as u32;
+    let scaled_y = rel_y.round().max(0.0) as u32;
+    let scaled_size = ((text.size as f64) * scale_factor).round().clamp(8.0, 512.0) as u32;
+    let scaled_stroke = text.stroke_width.map(|sw| {
+        if sw == 0 {
+            0
+        } else {
+            ((sw as f64) * scale_factor).round().clamp(1.0, 32.0) as u32
+        }
+    });
+    let scaled_shadow = text.shadow_offset.map(|so| {
+        if so == 0 {
+            0
+        } else {
+            ((so as f64) * scale_factor).round().clamp(1.0, 64.0) as u32
+        }
+    });
+    TextOverlay {
+        id: text.id.clone(),
+        text: text.text.clone(),
+        x: scaled_x,
+        y: scaled_y,
+        size: scaled_size,
+        color: text.color.clone(),
+        stroke_width: scaled_stroke,
+        stroke_color: text.stroke_color.clone(),
+        use_box: text.use_box,
+        box_color: text.box_color.clone(),
+        box_opacity: text.box_opacity,
+        visible: text.visible,
+        rotation: text.rotation,
+        arc_radius: text.arc_radius,
+        is_italic: text.is_italic,
+        shadow_offset: scaled_shadow,
+        shadow_color: text.shadow_color.clone(),
+    }
+}
+
+fn scale_image_overlay(image: &ImageOverlay, crop_x: u32, crop_y: u32, scale_factor: f64) -> ImageOverlay {
+    if (scale_factor - 1.0).abs() < 1e-6 && crop_x == 0 && crop_y == 0 {
+        return image.clone();
+    }
+    let rel_x = (image.x as f64 - crop_x as f64) * scale_factor;
+    let rel_y = (image.y as f64 - crop_y as f64) * scale_factor;
+    let scaled_x = rel_x.round().max(0.0) as u32;
+    let scaled_y = rel_y.round().max(0.0) as u32;
+    let scaled_width = ((image.width as f64) * scale_factor).round().clamp(8.0, 1920.0) as u32;
+    ImageOverlay {
+        path: image.path.clone(),
+        x: scaled_x,
+        y: scaled_y,
+        width: scaled_width,
+    }
+}
+
 fn build_filter_graph(plan: &RenderPlan) -> String {
-    let active_layers = plan.active_text_layers();
+    let crop_x = plan.crop.as_ref().map(|c| c.x).unwrap_or(0);
+    let crop_y = plan.crop.as_ref().map(|c| c.y).unwrap_or(0);
+    let base_width = plan
+        .crop
+        .as_ref()
+        .map(|c| c.width)
+        .or(plan.source_width)
+        .unwrap_or(plan.output_width)
+        .max(1);
+    let scale_factor = (plan.output_width.max(1) as f64) / (base_width as f64);
+
+    let active_layers: Vec<TextOverlay> = plan
+        .active_text_layers()
+        .into_iter()
+        .map(|l| scale_text_overlay(l, crop_x, crop_y, scale_factor))
+        .collect();
+    let scaled_image_overlay = plan
+        .image_overlay
+        .as_ref()
+        .map(|img| scale_image_overlay(img, crop_x, crop_y, scale_factor));
     let has_advanced = active_layers.iter().any(|l| l.has_advanced_transform());
 
     if !has_advanced {
@@ -859,7 +949,7 @@ fn build_filter_graph(plan: &RenderPlan) -> String {
         }
 
         if plan.is_webp() {
-            if let Some(image) = &plan.image_overlay {
+            if let Some(image) = &scaled_image_overlay {
                 format!(
                     "[0:v]{}[base];[1:v]scale={}:{}:flags=lanczos[sticker];[base][sticker]overlay={}:{}:eof_action=pass[vout]",
                     source, image.width, -1, image.x, image.y
@@ -868,7 +958,7 @@ fn build_filter_graph(plan: &RenderPlan) -> String {
                 format!("[0:v]{}[vout]", source)
             }
         } else if plan.is_avif() {
-            if let Some(image) = &plan.image_overlay {
+            if let Some(image) = &scaled_image_overlay {
                 format!(
                     "[0:v]{}[base];[1:v]scale={}:{}:flags=lanczos[sticker];[base][sticker]overlay={}:{}:eof_action=pass,format=yuv420p[vout]",
                     source, image.width, -1, image.x, image.y
@@ -877,7 +967,7 @@ fn build_filter_graph(plan: &RenderPlan) -> String {
                 format!("[0:v]{},format=yuv420p[vout]", source)
             }
         } else if plan.is_mp4() {
-            if let Some(image) = &plan.image_overlay {
+            if let Some(image) = &scaled_image_overlay {
                 format!(
                     "[0:v]{}[base];[1:v]scale={}:{}:flags=lanczos[sticker];[base][sticker]overlay={}:{}:eof_action=pass,format=yuv420p[vout]",
                     source, image.width, -1, image.x, image.y
@@ -887,7 +977,7 @@ fn build_filter_graph(plan: &RenderPlan) -> String {
             }
         } else {
             let mut graph = format!("[0:v]{}[base]", source);
-            let final_label = if let Some(image) = &plan.image_overlay {
+            let final_label = if let Some(image) = &scaled_image_overlay {
                 graph.push_str(&format!(
                     ";[1:v]scale={}:{}:flags=lanczos[sticker];[base][sticker]overlay={}:{}:eof_action=pass[composed]",
                     image.width, -1, image.x, image.y
@@ -931,7 +1021,17 @@ fn build_filter_graph(plan: &RenderPlan) -> String {
         graph_parts.push(format!("[0:v]{}[v0]", base_source));
         let mut current_stream = "[v0]".to_string();
         let fontfile_opt = detect_system_font();
-        let duration = (plan.end_secs - plan.start_secs).max(0.1);
+        let base_duration = (plan.end_secs - plan.start_secs).max(0.1);
+        let duration = if plan
+            .video_filter
+            .as_deref()
+            .map(|s| s.trim().eq_ignore_ascii_case("slow05x"))
+            .unwrap_or(false)
+        {
+            base_duration * 2.0
+        } else {
+            base_duration
+        };
 
         for (layer_idx, text) in active_layers.iter().enumerate() {
             if !text.has_advanced_transform() {
@@ -1228,7 +1328,7 @@ fn build_filter_graph(plan: &RenderPlan) -> String {
             }
         }
 
-        if let Some(image) = &plan.image_overlay {
+        if let Some(image) = &scaled_image_overlay {
             graph_parts.push(format!(
                 "[1:v]scale={}:{}:flags=lanczos[sticker];{}[sticker]overlay={}:{}:eof_action=pass[composed]",
                 image.width, -1, current_stream, image.x, image.y
@@ -1770,11 +1870,17 @@ fn render_gif(
     mut plan: RenderPlan,
 ) -> CommandResult<String> {
     let media = probe_media(Path::new(&plan.input_path))?;
+    if plan.source_width.is_none() {
+        plan.source_width = Some(media.width);
+    }
+    if plan.source_height.is_none() {
+        plan.source_height = Some(media.height);
+    }
     plan.output_path = resolve_unique_output_path(Path::new(&plan.output_path))
         .to_string_lossy()
         .to_string();
     validate_render_plan(&plan, &media)?;
-    if plan.text_overlay.is_some() && ffmpeg_supports_filter("drawtext") == Some(false) {
+    if !plan.active_text_layers().is_empty() && ffmpeg_supports_filter("drawtext") == Some(false) {
         return Err(app_error(
             "DRAW_TEXT_UNAVAILABLE",
             "当前 FFmpeg 构建不包含 drawtext，请换用带 libfreetype 的 FFmpeg。",
@@ -1980,7 +2086,7 @@ fn resolve_stickers_dir() -> Option<PathBuf> {
     if let Ok(val) = env::var("MEME_STUDIO_STICKERS_DIR") {
         let p = PathBuf::from(val);
         if p.is_dir() {
-            return Some(p);
+            return Some(fs::canonicalize(&p).unwrap_or(p));
         }
     }
 
@@ -1993,7 +2099,7 @@ fn resolve_stickers_dir() -> Option<PathBuf> {
             ];
             for cand in prod_candidates {
                 if cand.is_dir() && cand.join("deal_with_it.png").exists() {
-                    return Some(cand);
+                    return Some(fs::canonicalize(&cand).unwrap_or(cand));
                 }
             }
         }
@@ -2007,7 +2113,7 @@ fn resolve_stickers_dir() -> Option<PathBuf> {
     ];
     for cand in dev_candidates {
         if cand.is_dir() && cand.join("deal_with_it.png").exists() {
-            return Some(cand);
+            return Some(fs::canonicalize(&cand).unwrap_or(cand));
         }
     }
     None
@@ -2062,7 +2168,7 @@ fn resolve_sfx_dir() -> Option<PathBuf> {
     if let Ok(val) = env::var("MEME_STUDIO_SFX_DIR") {
         let p = PathBuf::from(val);
         if p.is_dir() {
-            return Some(p);
+            return Some(fs::canonicalize(&p).unwrap_or(p));
         }
     }
 
@@ -2075,7 +2181,7 @@ fn resolve_sfx_dir() -> Option<PathBuf> {
             ];
             for cand in prod_candidates {
                 if cand.is_dir() && cand.join("censor_bleep.mp3").exists() {
-                    return Some(cand);
+                    return Some(fs::canonicalize(&cand).unwrap_or(cand));
                 }
             }
         }
@@ -2089,7 +2195,7 @@ fn resolve_sfx_dir() -> Option<PathBuf> {
     ];
     for cand in dev_candidates {
         if cand.is_dir() && cand.join("censor_bleep.mp3").exists() {
-            return Some(cand);
+            return Some(fs::canonicalize(&cand).unwrap_or(cand));
         }
     }
     None
@@ -3115,5 +3221,105 @@ mod tests {
         assert_eq!(res4, temp_dir.join("meme (2).gif"));
 
         let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn scales_text_and_sticker_from_source_resolution_to_output_width() {
+        // Source 1920x1080 -> Output 320x180 (scale_factor = 1/6)
+        let plan = RenderPlan {
+            input_path: "input.mp4".to_string(),
+            output_path: "output.gif".to_string(),
+            start_secs: 0.0,
+            end_secs: 2.0,
+            crop: None,
+            output_width: 320,
+            fps: 12,
+            source_width: Some(1920),
+            source_height: Some(1080),
+            text_overlay: Some(TextOverlay {
+                text: "居中中文字幕".to_string(),
+                x: 600,
+                y: 900,
+                size: 120,
+                color: "#ffffff".to_string(),
+                stroke_width: Some(6),
+                stroke_color: Some("#000000".to_string()),
+                visible: Some(true),
+                ..Default::default()
+            }),
+            image_overlay: Some(ImageOverlay {
+                path: "sticker.png".to_string(),
+                x: 900,
+                y: 480,
+                width: 480,
+            }),
+            format: Some("gif".to_string()),
+            ..Default::default()
+        };
+
+        let graph = build_filter_graph(&plan);
+        // Text: x = 600/6 = 100, y = 900/6 = 150, fontsize = 120/6 = 20, borderw = 6/6 = 1
+        assert!(graph.contains("fontsize=20:x=100:y=150:borderw=1"));
+        // Sticker: width = 480/6 = 80, x = 900/6 = 150, y = 480/6 = 80
+        assert!(graph.contains("[1:v]scale=80:-1:flags=lanczos[sticker]"));
+        assert!(graph.contains("[base][sticker]overlay=150:80:eof_action=pass[composed]"));
+    }
+
+    #[test]
+    fn scales_text_and_sticker_with_crop_offset_and_scale() {
+        // Source 1920x1080, Crop at (320, 140) size 640x360 -> Output 320x180 (scale_factor = 320/640 = 0.5)
+        let plan = RenderPlan {
+            input_path: "input.mp4".to_string(),
+            output_path: "output.gif".to_string(),
+            start_secs: 0.0,
+            end_secs: 2.0,
+            crop: Some(CropArea {
+                x: 320,
+                y: 140,
+                width: 640,
+                height: 360,
+            }),
+            output_width: 320,
+            fps: 12,
+            source_width: Some(1920),
+            source_height: Some(1080),
+            text_overlay: Some(TextOverlay {
+                text: "裁切内文字".to_string(),
+                x: 420, // rel_x = 100 -> scaled_x = 50
+                y: 340, // rel_y = 200 -> scaled_y = 100
+                size: 48, // scaled_size = 24
+                color: "#ffe600".to_string(),
+                visible: Some(true),
+                ..Default::default()
+            }),
+            image_overlay: Some(ImageOverlay {
+                path: "sticker.png".to_string(),
+                x: 520, // rel_x = 200 -> scaled_x = 100
+                y: 240, // rel_y = 100 -> scaled_y = 50
+                width: 160, // scaled_width = 80
+            }),
+            format: Some("gif".to_string()),
+            ..Default::default()
+        };
+
+        let graph = build_filter_graph(&plan);
+        assert!(graph.contains("crop=640:360:320:140,scale=320:-1:flags=lanczos"));
+        assert!(graph.contains("fontsize=24:x=50:y=100"));
+        assert!(graph.contains("[1:v]scale=80:-1:flags=lanczos[sticker]"));
+        assert!(graph.contains("[base][sticker]overlay=100:50:eof_action=pass[composed]"));
+    }
+
+    #[test]
+    fn detect_system_font_prefers_cjk_font_on_macos() {
+        if cfg!(target_os = "macos") {
+            let font = detect_system_font();
+            assert!(font.is_some());
+            let f = font.unwrap();
+            assert!(
+                f.contains("STHeiti") || f.contains("Hiragino") || f.contains("PingFang") || f.contains("Songti"),
+                "Expected CJK-capable font on macOS, got: {}",
+                f
+            );
+        }
     }
 }

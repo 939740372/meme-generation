@@ -93,6 +93,8 @@ export interface StudioDraft {
     volume?: number;
     origVolume?: number;
   } | null;
+  sourceWidth?: number;
+  sourceHeight?: number;
 }
 
 export const BUILTIN_TEMPLATES: MemeTemplate[] = [
