@@ -178,25 +178,6 @@ fn resolve_binary(name: &str) -> PathBuf {
         }
     }
 
-    // 2. 检查应用可执行文件同级或 resources/binaries 目录（生产打包环境）
-    if let Ok(current_exe) = env::current_exe() {
-        if let Some(exe_dir) = current_exe.parent() {
-            let direct = exe_dir.join(name);
-            if direct.is_file() {
-                return direct;
-            }
-            let direct_exe = exe_dir.join(format!("{}.exe", name));
-            if direct_exe.is_file() {
-                return direct_exe;
-            }
-            let res_candidate = exe_dir.join("../Resources/binaries").join(name);
-            if res_candidate.is_file() {
-                return res_candidate;
-            }
-        }
-    }
-
-    // 3. 检查开发环境下的 src-tauri/binaries/<name>-<target-triple>
     let target_triple = match (std::env::consts::OS, std::env::consts::ARCH) {
         ("macos", "aarch64") => "aarch64-apple-darwin",
         ("macos", "x86_64") => "x86_64-apple-darwin",
@@ -205,23 +186,51 @@ fn resolve_binary(name: &str) -> PathBuf {
         _ => "",
     };
 
-    if !target_triple.is_empty() {
-        let binary_filename = if cfg!(windows) {
-            format!("{}-{}.exe", name, target_triple)
+    let binary_filename = if cfg!(windows) {
+        if target_triple.is_empty() {
+            format!("{}.exe", name)
         } else {
-            format!("{}-{}", name, target_triple)
-        };
+            format!("{}-{}.exe", name, target_triple)
+        }
+    } else if target_triple.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}-{}", name, target_triple)
+    };
 
-        let dev_candidates = [
-            PathBuf::from("src-tauri").join("binaries").join(&binary_filename),
-            PathBuf::from("binaries").join(&binary_filename),
-            PathBuf::from("..").join("src-tauri").join("binaries").join(&binary_filename),
-        ];
-
-        for candidate in dev_candidates {
-            if candidate.is_file() {
-                return candidate;
+    // 2. 检查应用可执行文件同级或 Resources 目录（生产打包环境）
+    if let Ok(current_exe) = env::current_exe() {
+        if let Some(exe_dir) = current_exe.parent() {
+            let prod_candidates = [
+                exe_dir.join(name),
+                exe_dir.join(&binary_filename),
+                exe_dir.join(format!("{}.exe", name)),
+                exe_dir.join("../Resources").join(name),
+                exe_dir.join("../Resources").join(&binary_filename),
+                exe_dir.join("../Resources/binaries").join(name),
+                exe_dir.join("../Resources/binaries").join(&binary_filename),
+            ];
+            for candidate in prod_candidates {
+                if candidate.is_file() {
+                    return candidate;
+                }
             }
+        }
+    }
+
+    // 3. 检查开发环境下的 src-tauri/binaries 候选路径
+    let dev_candidates = [
+        PathBuf::from("src-tauri").join("binaries").join(&binary_filename),
+        PathBuf::from("binaries").join(&binary_filename),
+        PathBuf::from("..").join("src-tauri").join("binaries").join(&binary_filename),
+        PathBuf::from("src-tauri").join("binaries").join(name),
+        PathBuf::from("binaries").join(name),
+        PathBuf::from("..").join("src-tauri").join("binaries").join(name),
+    ];
+
+    for candidate in dev_candidates {
+        if candidate.is_file() {
+            return candidate;
         }
     }
 
