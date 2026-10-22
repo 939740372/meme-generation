@@ -22,6 +22,21 @@ export interface MemeTemplate {
   createdAt?: number;
 }
 
+export interface CanvasTextLayer {
+  id: string;
+  text: string;
+  x: number;
+  y: number;
+  size: number;
+  color: string;
+  strokeWidth: number;
+  strokeColor: string;
+  useBox: boolean;
+  boxColor: string;
+  boxOpacity: number;
+  visible: boolean;
+}
+
 export interface StudioDraft {
   version: 1;
   updatedAt: number;
@@ -47,6 +62,8 @@ export interface StudioDraft {
   textUseBox: boolean;
   textBoxColor: string;
   textBoxOpacity: number;
+  textLayers?: CanvasTextLayer[];
+  activeLayerId?: string;
   useImage: boolean;
   imagePath: string;
   imageX: number;

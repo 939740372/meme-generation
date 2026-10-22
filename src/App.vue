@@ -26,6 +26,7 @@ import {
   loadDraftFromStorage,
   saveCustomTemplate,
   saveDraftToStorage,
+  type CanvasTextLayer,
   type MemeTemplate,
   type StudioDraft,
 } from "./lib/templates";
@@ -156,16 +157,108 @@ const currentPresetInfo = computed(() => {
 });
 
 const useText = ref(false);
-const text = ref("表情工坊");
-const textX = ref(24);
-const textY = ref(24);
-const textSize = ref(42);
-const textColor = ref("#ffffff");
-const textStrokeWidth = ref(2);
-const textStrokeColor = ref("#000000");
-const textUseBox = ref(false);
-const textBoxColor = ref("#000000");
-const textBoxOpacity = ref(0.60);
+const textLayers = ref<CanvasTextLayer[]>([
+  {
+    id: "layer-1",
+    text: "表情工坊",
+    x: 24,
+    y: 24,
+    size: 42,
+    color: "#ffffff",
+    strokeWidth: 2,
+    strokeColor: "#000000",
+    useBox: false,
+    boxColor: "#000000",
+    boxOpacity: 0.60,
+    visible: true,
+  },
+]);
+const activeLayerId = ref<string>("layer-1");
+
+const activeLayer = computed(() => {
+  return textLayers.value.find((l) => l.id === activeLayerId.value) || textLayers.value[0];
+});
+
+function addTextLayer(): void {
+  if (textLayers.value.length >= 4) return;
+  const newIndex = textLayers.value.length + 1;
+  const id = `layer-${Date.now()}`;
+  const defaultY = media.value
+    ? Math.min(media.value.height - 40, 24 + (newIndex - 1) * 60)
+    : 24 + (newIndex - 1) * 60;
+  const newLayer: CanvasTextLayer = {
+    id,
+    text: newIndex === 2 ? "第二行吐槽" : `文字图层 ${newIndex}`,
+    x: 24,
+    y: defaultY,
+    size: 32,
+    color: "#ffffff",
+    strokeWidth: 2,
+    strokeColor: "#000000",
+    useBox: false,
+    boxColor: "#000000",
+    boxOpacity: 0.60,
+    visible: true,
+  };
+  textLayers.value.push(newLayer);
+  activeLayerId.value = id;
+}
+
+function removeTextLayer(id: string): void {
+  if (textLayers.value.length <= 1) return;
+  const index = textLayers.value.findIndex((l) => l.id === id);
+  if (index === -1) return;
+  textLayers.value.splice(index, 1);
+  if (activeLayerId.value === id) {
+    const nextLayer = textLayers.value[Math.max(0, index - 1)];
+    activeLayerId.value = nextLayer ? nextLayer.id : textLayers.value[0].id;
+  }
+}
+
+function toggleLayerVisibility(layer: CanvasTextLayer): void {
+  layer.visible = !layer.visible;
+}
+
+const text = computed({
+  get: () => activeLayer.value?.text ?? "",
+  set: (v: string) => { if (activeLayer.value) activeLayer.value.text = v; },
+});
+const textX = computed({
+  get: () => activeLayer.value?.x ?? 0,
+  set: (v: number) => { if (activeLayer.value) activeLayer.value.x = v; },
+});
+const textY = computed({
+  get: () => activeLayer.value?.y ?? 0,
+  set: (v: number) => { if (activeLayer.value) activeLayer.value.y = v; },
+});
+const textSize = computed({
+  get: () => activeLayer.value?.size ?? 28,
+  set: (v: number) => { if (activeLayer.value) activeLayer.value.size = v; },
+});
+const textColor = computed({
+  get: () => activeLayer.value?.color ?? "#ffffff",
+  set: (v: string) => { if (activeLayer.value) activeLayer.value.color = v; },
+});
+const textStrokeWidth = computed({
+  get: () => activeLayer.value?.strokeWidth ?? 0,
+  set: (v: number) => { if (activeLayer.value) activeLayer.value.strokeWidth = v; },
+});
+const textStrokeColor = computed({
+  get: () => activeLayer.value?.strokeColor ?? "#000000",
+  set: (v: string) => { if (activeLayer.value) activeLayer.value.strokeColor = v; },
+});
+const textUseBox = computed({
+  get: () => activeLayer.value?.useBox ?? false,
+  set: (v: boolean) => { if (activeLayer.value) activeLayer.value.useBox = v; },
+});
+const textBoxColor = computed({
+  get: () => activeLayer.value?.boxColor ?? "#000000",
+  set: (v: string) => { if (activeLayer.value) activeLayer.value.boxColor = v; },
+});
+const textBoxOpacity = computed({
+  get: () => activeLayer.value?.boxOpacity ?? 0.6,
+  set: (v: number) => { if (activeLayer.value) activeLayer.value.boxOpacity = v; },
+});
 
 const useImage = ref(false);
 const imagePath = ref("");
@@ -194,28 +287,6 @@ const rangePercent = computed(() => Math.max(0, endPercent.value - startPercent.
 const selectedDuration = computed(() => Math.max(0, endSecs.value - startSecs.value));
 const selectedDurationLabel = computed(() => `${selectedDuration.value.toFixed(2)} 秒`);
 
-const textDisplayLeft = computed(() => {
-  if (!media.value || stageSize.width <= 0) return textX.value;
-  return textX.value * (stageSize.width / media.value.width);
-});
-
-const textDisplayTop = computed(() => {
-  if (!media.value || stageSize.height <= 0) return textY.value;
-  return textY.value * (stageSize.height / media.value.height);
-});
-
-const textDisplayFontSize = computed(() => {
-  if (!media.value || stageSize.width <= 0) return textSize.value;
-  return Math.max(12, Math.min(textSize.value * (stageSize.width / media.value.width), 72));
-});
-
-const textDisplayStrokeWidth = computed(() => {
-  if (textStrokeWidth.value <= 0) return 0;
-  if (!media.value || stageSize.width <= 0) return textStrokeWidth.value;
-  const scaled = textStrokeWidth.value * (stageSize.width / media.value.width);
-  return Math.max(1, Math.round(scaled));
-});
-
 function hexToRgba(hex: string, opacity: number): string {
   const clean = hex.replace("#", "");
   const r = parseInt(clean.substring(0, 2), 16) || 0;
@@ -224,25 +295,38 @@ function hexToRgba(hex: string, opacity: number): string {
   return `rgba(${r}, ${g}, ${b}, ${opacity})`;
 }
 
-const textDisplayBackground = computed(() => {
-  if (!textUseBox.value) return "transparent";
-  return hexToRgba(textBoxColor.value, textBoxOpacity.value);
-});
+function getTextLayerStyle(layer: CanvasTextLayer): Record<string, string | number | undefined> {
+  let left = layer.x;
+  let top = layer.y;
+  let fontSize = layer.size;
+  let strokeW = layer.strokeWidth;
 
-const textPreviewStyle = computed(() => {
+  if (media.value && stageSize.width > 0 && stageSize.height > 0) {
+    const scaleX = stageSize.width / media.value.width;
+    const scaleY = stageSize.height / media.value.height;
+    left = Math.round(layer.x * scaleX);
+    top = Math.round(layer.y * scaleY);
+    fontSize = Math.max(12, Math.min(Math.round(layer.size * scaleX), 72));
+    if (strokeW > 0) {
+      strokeW = Math.max(1, Math.round(layer.strokeWidth * scaleX));
+    }
+  }
+
+  const bg = layer.useBox ? hexToRgba(layer.boxColor, layer.boxOpacity) : "transparent";
+
   const styles: Record<string, string | number | undefined> = {
-    left: `${textDisplayLeft.value}px`,
-    top: `${textDisplayTop.value}px`,
-    color: textColor.value,
-    fontSize: `${textDisplayFontSize.value}px`,
-    backgroundColor: textDisplayBackground.value,
+    left: `${left}px`,
+    top: `${top}px`,
+    color: layer.color,
+    fontSize: `${fontSize}px`,
+    backgroundColor: bg,
     paintOrder: "stroke fill",
   };
-  if (textStrokeWidth.value > 0) {
-    styles["-webkit-text-stroke"] = `${textDisplayStrokeWidth.value}px ${textStrokeColor.value}`;
+  if (strokeW > 0) {
+    styles["-webkit-text-stroke"] = `${strokeW}px ${layer.strokeColor}`;
   }
   return styles;
-});
+}
 
 const imageDisplayLeft = computed(() => {
   if (!media.value || stageSize.width <= 0) return imageX.value;
@@ -351,15 +435,16 @@ function onTimelineTrackClick(event: MouseEvent): void {
   }
 }
 
-function startDragText(event: PointerEvent): void {
+function startDragText(layer: CanvasTextLayer, event: PointerEvent): void {
   if (!media.value || !stageRef.value) return;
   event.preventDefault();
   event.stopPropagation();
+  activeLayerId.value = layer.id;
   isDraggingText.value = true;
   const startClientX = event.clientX;
   const startClientY = event.clientY;
-  const initX = textX.value;
-  const initY = textY.value;
+  const initX = layer.x;
+  const initY = layer.y;
   const scaleX = stageRef.value.clientWidth / media.value.width;
   const scaleY = stageRef.value.clientHeight / media.value.height;
 
@@ -368,8 +453,8 @@ function startDragText(event: PointerEvent): void {
     const deltaY = (e.clientY - startClientY) / scaleY;
     const newX = Math.round(initX + deltaX);
     const newY = Math.round(initY + deltaY);
-    textX.value = Math.max(0, Math.min(media.value!.width - 20, newX));
-    textY.value = Math.max(0, Math.min(media.value!.height - 20, newY));
+    layer.x = Math.max(0, Math.min(media.value!.width - 20, newX));
+    layer.y = Math.max(0, Math.min(media.value!.height - 20, newY));
   };
 
   const onPointerUp = (): void => {
@@ -722,6 +807,23 @@ async function chooseImage(): Promise<void> {
 
 function buildRenderPlan(): RenderPlan {
   const finalOut = ensureFormatExtension(outputPath.value.trim(), exportFormat.value);
+  const activeLayers = textLayers.value
+    .filter((l) => l.visible && l.text.trim().length > 0)
+    .map((l) => ({
+      id: l.id,
+      text: l.text,
+      x: Number(l.x),
+      y: Number(l.y),
+      size: Number(l.size),
+      color: l.color,
+      strokeWidth: Number(l.strokeWidth),
+      strokeColor: l.strokeColor,
+      useBox: Boolean(l.useBox),
+      boxColor: l.boxColor,
+      boxOpacity: Number(l.boxOpacity),
+      visible: true,
+    }));
+
   return {
     inputPath: inputPath.value,
     outputPath: finalOut,
@@ -732,20 +834,8 @@ function buildRenderPlan(): RenderPlan {
     outputWidth: Number(outputWidth.value),
     fps: Number(fps.value),
     quality: currentQuality.value,
-    textOverlay: useText.value
-      ? {
-          text: text.value,
-          x: Number(textX.value),
-          y: Number(textY.value),
-          size: Number(textSize.value),
-          color: textColor.value,
-          strokeWidth: Number(textStrokeWidth.value),
-          strokeColor: textStrokeColor.value,
-          useBox: Boolean(textUseBox.value),
-          boxColor: textBoxColor.value,
-          boxOpacity: Number(textBoxOpacity.value),
-        }
-      : null,
+    textOverlay: useText.value && activeLayers.length > 0 ? activeLayers[0] : null,
+    textLayers: useText.value && activeLayers.length > 0 ? activeLayers : null,
     imageOverlay:
       useImage.value && imagePath.value
         ? {
@@ -899,18 +989,42 @@ async function loadHistoryPlan(record: ExportRecord): Promise<void> {
     useCrop.value = false;
   }
 
-  if (p.textOverlay) {
+  if (p.textLayers && p.textLayers.length > 0) {
     useText.value = true;
-    text.value = p.textOverlay.text;
-    textX.value = p.textOverlay.x;
-    textY.value = p.textOverlay.y;
-    textSize.value = p.textOverlay.size;
-    textColor.value = p.textOverlay.color;
-    textStrokeWidth.value = p.textOverlay.strokeWidth ?? 2;
-    textStrokeColor.value = p.textOverlay.strokeColor ?? "#000000";
-    textUseBox.value = p.textOverlay.useBox ?? false;
-    textBoxColor.value = p.textOverlay.boxColor ?? "#000000";
-    textBoxOpacity.value = p.textOverlay.boxOpacity ?? 0.6;
+    textLayers.value = p.textLayers.map((l, idx) => ({
+      id: l.id || `layer-${idx + 1}`,
+      text: l.text,
+      x: l.x,
+      y: l.y,
+      size: l.size,
+      color: l.color,
+      strokeWidth: l.strokeWidth ?? 2,
+      strokeColor: l.strokeColor ?? "#000000",
+      useBox: l.useBox ?? false,
+      boxColor: l.boxColor ?? "#000000",
+      boxOpacity: l.boxOpacity ?? 0.6,
+      visible: l.visible ?? true,
+    }));
+    activeLayerId.value = textLayers.value[0].id;
+  } else if (p.textOverlay) {
+    useText.value = true;
+    textLayers.value = [
+      {
+        id: "layer-1",
+        text: p.textOverlay.text,
+        x: p.textOverlay.x,
+        y: p.textOverlay.y,
+        size: p.textOverlay.size,
+        color: p.textOverlay.color,
+        strokeWidth: p.textOverlay.strokeWidth ?? 2,
+        strokeColor: p.textOverlay.strokeColor ?? "#000000",
+        useBox: p.textOverlay.useBox ?? false,
+        boxColor: p.textOverlay.boxColor ?? "#000000",
+        boxOpacity: p.textOverlay.boxOpacity ?? 0.6,
+        visible: true,
+      },
+    ];
+    activeLayerId.value = "layer-1";
   } else {
     useText.value = false;
   }
@@ -1159,7 +1273,7 @@ function applyTemplate(tpl: MemeTemplate): void {
   }
 
   isDrawerOpen.value = false;
-  showToast(`已套用「${tpl.name}」模板`);
+  showToast(`已套用「${tpl.name}」模板到当前图层`);
 }
 
 // 草稿自动暂存与恢复
@@ -1192,6 +1306,8 @@ function buildCurrentDraft(): StudioDraft {
     textUseBox: Boolean(textUseBox.value),
     textBoxColor: textBoxColor.value,
     textBoxOpacity: Number(textBoxOpacity.value),
+    textLayers: JSON.parse(JSON.stringify(textLayers.value)),
+    activeLayerId: activeLayerId.value,
     useImage: useImage.value,
     imagePath: imagePath.value,
     imageX: Number(imageX.value),
@@ -1238,16 +1354,23 @@ function resetWorkspace(): void {
   selectedPresetId.value = "custom";
   exportFormat.value = "gif";
   useText.value = false;
-  text.value = "输入文字";
-  textX.value = 20;
-  textY.value = 40;
-  textSize.value = 28;
-  textColor.value = "#ffffff";
-  textStrokeWidth.value = 2;
-  textStrokeColor.value = "#000000";
-  textUseBox.value = false;
-  textBoxColor.value = "#000000";
-  textBoxOpacity.value = 0.6;
+  textLayers.value = [
+    {
+      id: "layer-1",
+      text: "输入文字",
+      x: 20,
+      y: 40,
+      size: 28,
+      color: "#ffffff",
+      strokeWidth: 2,
+      strokeColor: "#000000",
+      useBox: false,
+      boxColor: "#000000",
+      boxOpacity: 0.6,
+      visible: true,
+    },
+  ];
+  activeLayerId.value = "layer-1";
   useImage.value = false;
   imagePath.value = "";
   status.value = "idle";
@@ -1281,16 +1404,28 @@ async function restoreDraftIfAvailable(): Promise<void> {
         exportFormat.value = draft.format;
         selectedPresetId.value = draft.selectedPresetId;
         useText.value = draft.useText;
-        text.value = draft.text;
-        textX.value = draft.textX;
-        textY.value = draft.textY;
-        textSize.value = draft.textSize;
-        textColor.value = draft.textColor;
-        textStrokeWidth.value = draft.textStrokeWidth;
-        textStrokeColor.value = draft.textStrokeColor;
-        textUseBox.value = draft.textUseBox;
-        textBoxColor.value = draft.textBoxColor;
-        textBoxOpacity.value = draft.textBoxOpacity;
+        if (draft.textLayers && draft.textLayers.length > 0) {
+          textLayers.value = draft.textLayers;
+          activeLayerId.value = draft.activeLayerId || draft.textLayers[0].id;
+        } else if (draft.text) {
+          textLayers.value = [
+            {
+              id: "layer-1",
+              text: draft.text,
+              x: draft.textX ?? 20,
+              y: draft.textY ?? 40,
+              size: draft.textSize ?? 28,
+              color: draft.textColor ?? "#ffffff",
+              strokeWidth: draft.textStrokeWidth ?? 2,
+              strokeColor: draft.textStrokeColor ?? "#000000",
+              useBox: draft.textUseBox ?? false,
+              boxColor: draft.textBoxColor ?? "#000000",
+              boxOpacity: draft.textBoxOpacity ?? 0.6,
+              visible: true,
+            },
+          ];
+          activeLayerId.value = "layer-1";
+        }
         useImage.value = draft.useImage;
         imagePath.value = draft.imagePath;
         imageX.value = draft.imageX;
@@ -1302,14 +1437,28 @@ async function restoreDraftIfAvailable(): Promise<void> {
       } catch {
         errorMessage.value = "上次编辑的视频文件已移动或无法访问，已恢复排版参数。";
         useText.value = draft.useText;
-        text.value = draft.text;
-        textSize.value = draft.textSize;
-        textColor.value = draft.textColor;
-        textStrokeWidth.value = draft.textStrokeWidth;
-        textStrokeColor.value = draft.textStrokeColor;
-        textUseBox.value = draft.textUseBox;
-        textBoxColor.value = draft.textBoxColor;
-        textBoxOpacity.value = draft.textBoxOpacity;
+        if (draft.textLayers && draft.textLayers.length > 0) {
+          textLayers.value = draft.textLayers;
+          activeLayerId.value = draft.activeLayerId || draft.textLayers[0].id;
+        } else if (draft.text) {
+          textLayers.value = [
+            {
+              id: "layer-1",
+              text: draft.text,
+              x: draft.textX ?? 20,
+              y: draft.textY ?? 40,
+              size: draft.textSize ?? 28,
+              color: draft.textColor ?? "#ffffff",
+              strokeWidth: draft.textStrokeWidth ?? 2,
+              strokeColor: draft.textStrokeColor ?? "#000000",
+              useBox: draft.textUseBox ?? false,
+              boxColor: draft.textBoxColor ?? "#000000",
+              boxOpacity: draft.textBoxOpacity ?? 0.6,
+              visible: true,
+            },
+          ];
+          activeLayerId.value = "layer-1";
+        }
       }
     }
   } finally {
@@ -1354,6 +1503,14 @@ watch(
     queueDraftSave();
   },
   { deep: false },
+);
+
+watch(
+  textLayers,
+  () => {
+    queueDraftSave();
+  },
+  { deep: true },
 );
 
 let resizeObserver: ResizeObserver | null = null;
@@ -1556,17 +1713,27 @@ onBeforeUnmount(() => {
                   <div class="preview-grid"></div>
                   <div class="preview-orb orb-a"></div>
                   <div class="preview-orb orb-b"></div>
-                  <div
-                    v-if="useText && text"
-                    class="preview-text interactive-drag"
-                    :class="{ 'is-dragging': isDraggingText, 'with-box': textUseBox }"
-                    :style="textPreviewStyle"
-                    title="按住鼠标拖拽文字位置"
-                    @pointerdown="startDragText"
-                  >
-                    <span v-if="isDraggingText" class="drag-handle-pill">X: {{ textX }} Y: {{ textY }}</span>
-                    {{ text }}
-                  </div>
+                  <template v-if="useText">
+                    <template v-for="layer in textLayers" :key="layer.id">
+                      <div
+                        v-if="layer.visible && layer.text"
+                        class="preview-text interactive-drag"
+                        :class="{
+                          'is-dragging': isDraggingText && activeLayerId === layer.id,
+                          'is-active': activeLayerId === layer.id,
+                          'with-box': layer.useBox,
+                        }"
+                        :style="getTextLayerStyle(layer)"
+                        :title="`图层 · 点击选中并拖拽`"
+                        @pointerdown="startDragText(layer, $event)"
+                      >
+                        <span v-if="isDraggingText && activeLayerId === layer.id" class="drag-handle-pill">
+                          X: {{ layer.x }} Y: {{ layer.y }}
+                        </span>
+                        {{ layer.text }}
+                      </div>
+                    </template>
+                  </template>
                   <div
                     v-if="useImage && imagePath"
                     class="preview-sticker interactive-drag"
@@ -1791,6 +1958,47 @@ onBeforeUnmount(() => {
               </div>
               <label class="toggle-row"><input v-model="useText" type="checkbox" /><span class="toggle-ui"></span><span>文字</span></label>
               <div v-if="useText" class="overlay-fields">
+                <div class="layer-tabs-bar">
+                  <div class="layer-tabs-list">
+                    <button
+                      v-for="(layer, index) in textLayers"
+                      :key="layer.id"
+                      type="button"
+                      class="layer-tab-btn"
+                      :class="{ 'is-active': activeLayerId === layer.id, 'is-hidden': !layer.visible }"
+                      @click="activeLayerId = layer.id"
+                    >
+                      <span class="tab-tag">T{{ index + 1 }}</span>
+                      <span class="tab-snippet">{{ layer.text || '未命名' }}</span>
+                      <span
+                        class="layer-action-icon"
+                        role="button"
+                        :title="layer.visible ? '隐藏此图层' : '显示此图层'"
+                        @click.stop="toggleLayerVisibility(layer)"
+                      >
+                        {{ layer.visible ? '👁' : '🚫' }}
+                      </span>
+                      <span
+                        v-if="textLayers.length > 1"
+                        class="layer-action-icon del-icon"
+                        role="button"
+                        title="删除图层"
+                        @click.stop="removeTextLayer(layer.id)"
+                      >
+                        ×
+                      </span>
+                    </button>
+                  </div>
+                  <button
+                    v-if="textLayers.length < 4"
+                    type="button"
+                    class="add-layer-btn"
+                    title="添加文字图层（最多 4 个）"
+                    @click="addTextLayer"
+                  >
+                    ＋ 添加
+                  </button>
+                </div>
                 <label class="field field-wide"><span>内容</span><input v-model="text" type="text" maxlength="80" placeholder="输入文字" /></label>
                 <div class="field-grid four-up">
                   <label class="field"><span>X</span><input v-model.number="textX" type="number" min="0" step="1" /></label>

@@ -26,6 +26,7 @@ export interface CropArea {
 }
 
 export interface TextOverlay {
+  id?: string;
   text: string;
   x: number;
   y: number;
@@ -36,6 +37,7 @@ export interface TextOverlay {
   useBox?: boolean;
   boxColor?: string;
   boxOpacity?: number;
+  visible?: boolean;
 }
 
 export interface ImageOverlay {
@@ -55,6 +57,7 @@ export interface RenderPlan {
   fps: number;
   quality?: "low" | "medium" | "high";
   textOverlay: TextOverlay | null;
+  textLayers?: TextOverlay[] | null;
   imageOverlay: ImageOverlay | null;
   format?: "gif" | "webp";
 }

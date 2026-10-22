@@ -1,6 +1,6 @@
 # 需求说明书：多文字图层支持
 
-- 状态：proposed
+- 状态：ready-to-merge
 - Feature slug: multi-text-layers
 - 分支：feature/multi-text-layers
 - 负责人：Antigravity
