@@ -1,6 +1,6 @@
 # 需求调研：自定义背景音乐与音效混流 (bgm-audio-mixing)
 
-- 状态：ready-to-merge
+- 状态：merged
 - Feature slug: bgm-audio-mixing
 - 分支：feature/bgm-audio-mixing
 - 负责人：Antigravity
