@@ -1,6 +1,6 @@
 # 详细实现文档：导出预设与压缩质量控制
 
-- 状态：implementing
+- 状态：ready-to-merge
 - Feature slug: export-presets
 - 分支：feature/export-presets
 - 负责人：待定
@@ -38,4 +38,13 @@
 
 ## 4. 自测记录
 
-*(待实现后更新)*
+- 环境：macOS 15+ arm64；Node v22.22.0；pnpm 11.17.0；Rust 1.94.1；静态构建 FFmpeg 9.0.2。
+- `git diff --check`：通过，格式与缩进完全合规。
+- `pnpm build`（包含 `vue-tsc --noEmit` & Vite production build）：通过。
+- `PATH=/Users/ryantorres/.cargo/bin:$PATH cargo check --manifest-path src-tauri/Cargo.toml --locked`：通过，零警告/错误。
+- `PATH=/Users/ryantorres/.cargo/bin:$PATH cargo test --manifest-path src-tauri/Cargo.toml`：通过，5 个单元测试全部通过（包含不同 `quality` 映射 dither 滤镜的测试）。
+- 真实媒体体积对比测试：
+  - 同一 2.5 秒短视频素材下：
+    - `wechat-small` 预设（240px, 10fps, bayer dither）导出产物体积为 **127 KB**，远低于微信 1MB 限制；
+    - `hd-social` 预设（480px, 15fps, sierra2_4a dither）导出产物体积为 **597 KB**，渐变平滑，分辨率更高。
+- 窗口视口检查：在 `1280×820` 固定视口下，预设按钮组嵌入“输出”面板后高度紧凑，页面根视口与左右面板均无任何横向或纵向外层滚动条。

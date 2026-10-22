@@ -43,6 +43,89 @@ const crop = reactive({ x: 0, y: 0, width: 480, height: 270 });
 const outputWidth = ref(480);
 const fps = ref(12);
 
+export type PresetQuality = "low" | "medium" | "high";
+
+export interface ExportPreset {
+  id: string;
+  name: string;
+  badge: string;
+  width: number;
+  fps: number;
+  quality: PresetQuality;
+  description: string;
+}
+
+const PRESETS: ExportPreset[] = [
+  {
+    id: "wechat-small",
+    name: "微信表情",
+    badge: "< 1MB",
+    width: 240,
+    fps: 10,
+    quality: "low",
+    description: "微信聊天窗口表情包，体积严格压缩",
+  },
+  {
+    id: "wechat-large",
+    name: "大表情",
+    badge: "< 5MB",
+    width: 320,
+    fps: 12,
+    quality: "medium",
+    description: "微信大表情与动态贴纸，画质与体积均衡",
+  },
+  {
+    id: "hd-social",
+    name: "高清动图",
+    badge: "高清",
+    width: 480,
+    fps: 15,
+    quality: "high",
+    description: "Discord、Twitter、小红书高清分享",
+  },
+  {
+    id: "lite",
+    name: "轻量秒发",
+    badge: "秒开",
+    width: 180,
+    fps: 8,
+    quality: "low",
+    description: "极小文件体积，弱网环境极速加载",
+  },
+];
+
+const selectedPresetId = ref<string>("wechat-large");
+const currentQuality = ref<PresetQuality>("medium");
+
+function applyPreset(preset: ExportPreset): void {
+  selectedPresetId.value = preset.id;
+  outputWidth.value = preset.width;
+  fps.value = preset.fps;
+  currentQuality.value = preset.quality;
+  if (media.value && useCrop.value) {
+    crop.width = Math.min(media.value.width, preset.width);
+    crop.height = Math.min(media.value.height, Math.round(crop.width * 0.5625));
+  }
+}
+
+function onManualParameterChange(): void {
+  const matched = PRESETS.find(
+    (p) => p.width === outputWidth.value && p.fps === fps.value && p.quality === currentQuality.value,
+  );
+  selectedPresetId.value = matched ? matched.id : "custom";
+}
+
+const currentPresetInfo = computed(() => {
+  if (selectedPresetId.value === "custom") {
+    return { name: "自定义参数", badge: "自定", description: "手动调整的分辨率与帧率" };
+  }
+  return PRESETS.find((p) => p.id === selectedPresetId.value) ?? {
+    name: "标准表情",
+    badge: "平衡",
+    description: "标准导出参数",
+  };
+});
+
 const useText = ref(false);
 const text = ref("表情工坊");
 const textX = ref(24);
@@ -341,7 +424,7 @@ function readableRenderError(code: string, message: string): string {
 function applyMediaDefaults(nextMedia: MediaInfo): void {
   const suggestedEnd = Math.min(nextMedia.durationSecs, 3);
   endSecs.value = Number(suggestedEnd.toFixed(2));
-  outputWidth.value = Math.min(480, nextMedia.width);
+  applyPreset(PRESETS[1]); // 默认应用微信大表情 (320px, 12fps)
   crop.width = Math.min(nextMedia.width, outputWidth.value);
   crop.height = Math.min(nextMedia.height, Math.round(crop.width * 0.5625));
   crop.x = Math.max(0, Math.floor((nextMedia.width - crop.width) / 2));
@@ -423,6 +506,7 @@ function buildRenderPlan(): RenderPlan {
     crop: useCrop.value ? { ...crop } : null,
     outputWidth: Number(outputWidth.value),
     fps: Number(fps.value),
+    quality: currentQuality.value,
     textOverlay: useText.value
       ? {
           text: text.value,
@@ -758,10 +842,37 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="control-section">
-              <div class="section-label"><span>02</span> 输出</div>
+              <div class="section-label-row">
+                <div class="section-label"><span>02</span> 输出预设</div>
+                <span class="preset-tag-info">{{ currentPresetInfo.name }} · {{ currentPresetInfo.badge }}</span>
+              </div>
+              <div class="preset-pills">
+                <button
+                  v-for="p in PRESETS"
+                  :key="p.id"
+                  type="button"
+                  class="preset-pill"
+                  :class="{ active: selectedPresetId === p.id }"
+                  :title="p.description"
+                  @click="applyPreset(p)"
+                >
+                  <span class="preset-name">{{ p.name }}</span>
+                  <span class="preset-badge">{{ p.badge }}</span>
+                </button>
+                <button
+                  type="button"
+                  class="preset-pill"
+                  :class="{ active: selectedPresetId === 'custom' }"
+                  title="手动调整输出参数"
+                  @click="selectedPresetId = 'custom'"
+                >
+                  <span class="preset-name">自定义</span>
+                  <span class="preset-badge">自定</span>
+                </button>
+              </div>
               <div class="field-grid two-up">
-                <label class="field"><span>宽度 · 像素</span><input v-model.number="outputWidth" type="number" min="32" max="1920" step="1" /></label>
-                <label class="field"><span>帧率</span><input v-model.number="fps" type="number" min="1" max="60" step="1" /></label>
+                <label class="field"><span>宽度 · 像素</span><input v-model.number="outputWidth" type="number" min="32" max="1920" step="1" @input="onManualParameterChange" /></label>
+                <label class="field"><span>帧率 · FPS</span><input v-model.number="fps" type="number" min="1" max="60" step="1" @input="onManualParameterChange" /></label>
               </div>
               <label class="toggle-row"><input v-model="useCrop" type="checkbox" /><span class="toggle-ui"></span><span>裁切</span></label>
               <div v-if="useCrop" class="field-grid four-up crop-grid">
@@ -822,6 +933,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="export-actions">
             <span v-if="status === 'completed'" class="output-size">{{ (outputBytes / 1024).toFixed(1) }} KB</span>
+            <span v-else-if="media" class="preset-summary-badge">{{ currentPresetInfo.name }} · {{ currentPresetInfo.badge }}</span>
             <button v-if="isBusy" class="secondary-action danger" type="button" @click="stopRender">取消</button>
             <button v-else class="primary-action" type="button" :disabled="!canRender || !isDesktop" @click="startRender">
               {{ status === "completed" ? "再次导出" : "导出 GIF" }} <span>↗</span>

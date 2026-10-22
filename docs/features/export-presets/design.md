@@ -1,6 +1,6 @@
 # 设计文档：导出预设与压缩质量控制
 
-- 状态：designed
+- 状态：ready-to-merge
 - Feature slug: export-presets
 - 分支：feature/export-presets
 - 负责人：待定

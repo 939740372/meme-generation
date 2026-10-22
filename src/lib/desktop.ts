@@ -47,6 +47,7 @@ export interface RenderPlan {
   crop: CropArea | null;
   outputWidth: number;
   fps: number;
+  quality?: "low" | "medium" | "high";
   textOverlay: TextOverlay | null;
   imageOverlay: ImageOverlay | null;
 }

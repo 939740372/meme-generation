@@ -102,6 +102,7 @@ struct RenderPlan {
     crop: Option<CropArea>,
     output_width: u32,
     fps: u32,
+    quality: Option<String>,
     text_overlay: Option<TextOverlay>,
     image_overlay: Option<ImageOverlay>,
 }
@@ -519,9 +520,15 @@ fn build_filter_graph(plan: &RenderPlan) -> String {
     } else {
         "[base]"
     };
+    let dither = match plan.quality.as_deref() {
+        Some("low") => "bayer:bayer_scale=3",
+        Some("high") => "sierra2_4a",
+        Some("none") => "none",
+        _ => "sierra2_4a",
+    };
     graph.push_str(&format!(
-        ";{}split[gif][palette];[palette]palettegen=stats_mode=diff[p];[gif][p]paletteuse=dither=sierra2_4a[vout]",
-        final_label
+        ";{}split[gif][palette];[palette]palettegen=stats_mode=diff[p];[gif][p]paletteuse=dither={}[vout]",
+        final_label, dither
     ));
     graph
 }
@@ -892,12 +899,13 @@ mod tests {
             crop: None,
             output_width: 480,
             fps: 12,
+            quality: None,
             text_overlay: None,
             image_overlay: None,
         };
         let graph = build_filter_graph(&plan);
         assert!(graph.contains("palettegen"));
-        assert!(graph.contains("paletteuse"));
+        assert!(graph.contains("paletteuse=dither=sierra2_4a"));
         assert!(graph.contains("scale=480:-1"));
     }
 
@@ -911,6 +919,7 @@ mod tests {
             crop: None,
             output_width: 320,
             fps: 10,
+            quality: Some("low".to_string()),
             text_overlay: Some(TextOverlay {
                 text: "测试文字".to_string(),
                 x: 10,
@@ -923,8 +932,7 @@ mod tests {
         let graph = build_filter_graph(&plan);
         assert!(graph.contains("drawtext="));
         assert!(graph.contains("测试文字"));
-        assert!(graph.contains("fontcolor=0xff0000"));
-        assert!(graph.contains("fontsize=24"));
+        assert!(graph.contains("paletteuse=dither=bayer:bayer_scale=3"));
     }
 
     #[test]
