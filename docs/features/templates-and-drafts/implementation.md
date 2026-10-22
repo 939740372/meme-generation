@@ -1,6 +1,6 @@
 # 实现计划与自测：常用表情包模板与草稿暂存
 
-- 状态：ready-to-merge
+- 状态：merged
 - Feature slug: templates-and-drafts
 - 分支：feature/templates-and-drafts
 - 负责人：Antigravity

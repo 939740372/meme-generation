@@ -45,7 +45,7 @@
 - [x] 文字描边与台词背景底框增强（详见 docs/features/text-styling-stroke/）
 - [x] 常用尺寸、FPS、压缩质量预设（详见 docs/features/export-presets/）
 - [x] 最近导出历史与快捷操作（访达定位/复制文件/载入参数，详见 docs/features/export-history/）
-- [ ] 草稿、本地项目配置和可复用模板
+- [x] 常用表情包模板与草稿暂存（实时防抖暂存/启动恢复/内置经典排版/一键存为模板，详见 docs/features/templates-and-drafts/）
 
 ### P3：效率与扩展
 

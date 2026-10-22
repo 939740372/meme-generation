@@ -1,6 +1,6 @@
 # 任务拆解：常用表情包模板与草稿暂存
 
-- 状态：ready-to-merge
+- 状态：merged
 - Feature slug: templates-and-drafts
 - 分支：feature/templates-and-drafts
 - 负责人：Antigravity
@@ -32,5 +32,5 @@
   - [x] 4.4 检查 `git diff --check`
 - [x] 5. 收尾与主分支合入
   - [x] 5.1 更新五件套文档状态为 `ready-to-merge` 并记录自测结果
-  - [ ] 5.2 非快进合并至 `main`
-  - [ ] 5.3 文档状态变更为 `merged`，同步根目录 `TODO.md`，推送到远程仓库
+  - [x] 5.2 非快进合并至 `main`
+  - [x] 5.3 文档状态变更为 `merged`，同步根目录 `TODO.md`，推送到远程仓库
