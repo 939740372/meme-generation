@@ -1,6 +1,6 @@
 # 任务拆解：批量处理与导出任务队列 (batch-queue)
 
-- 状态：ready-to-merge
+- 状态：merged
 - Feature slug: batch-queue
 - 分支：feature/batch-queue
 - 负责人：Antigravity
@@ -31,7 +31,7 @@
   - [x] 4.3 运行 `cargo check --locked` 与 `cargo test` 全绿通过（13 个测试通过）
   - [x] 4.4 执行真实多任务批量队列导出 Smoke Test（GIF 与 WebP）
   - [x] 4.5 检查 `git diff --check`
-- [ ] 5. 收尾与主分支合入
+- [x] 5. 收尾与主分支合入
   - [x] 5.1 更新五件套文档状态为 `ready-to-merge` 并记录自测结果
-  - [ ] 5.2 非快进合并至 `main`
-  - [ ] 5.3 文档状态变更为 `merged`，同步根目录 `TODO.md`，推送到远程仓库
+  - [x] 5.2 非快进合并至 `main`
+  - [x] 5.3 文档状态变更为 `merged`，同步根目录 `TODO.md`，推送到远程仓库

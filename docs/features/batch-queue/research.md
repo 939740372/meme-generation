@@ -1,6 +1,6 @@
 # 需求调研：批量处理与导出任务队列 (batch-queue)
 
-- 状态：ready-to-merge
+- 状态：merged
 - Feature slug: batch-queue
 - 分支：feature/batch-queue
 - 负责人：Antigravity
