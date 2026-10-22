@@ -1,6 +1,6 @@
 # 需求调研：带音轨的短视频表情导出 (audio-video-export)
 
-- 状态：implementing
+- 状态：merged
 - Feature slug: audio-video-export
 - 分支：feature/audio-video-export
 - 负责人：Antigravity
