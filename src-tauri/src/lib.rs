@@ -124,6 +124,8 @@ struct RenderPlan {
     video_filter: Option<String>,
     #[serde(default)]
     include_audio: Option<bool>,
+    #[serde(default)]
+    hw_accel: Option<String>,
 }
 
 impl RenderPlan {
@@ -711,9 +713,87 @@ fn build_filter_graph(plan: &RenderPlan) -> String {
     }
 }
 
-fn build_ffmpeg_args(plan: &RenderPlan) -> Vec<String> {
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HardwareAccelerationInfo {
+    pub supported: bool,
+    pub engine: String,
+    pub encoder: String,
+    pub description: String,
+}
+
+pub fn detect_hardware_acceleration(ffmpeg_bin: &Path) -> HardwareAccelerationInfo {
+    let output = Command::new(ffmpeg_bin)
+        .args(["-hide_banner", "-encoders"])
+        .output();
+
+    if let Ok(out) = output {
+        if out.status.success() {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            let combined = format!("{}\n{}", stdout, stderr);
+
+            // 1. macOS VideoToolbox (Apple Silicon / Intel Mac GPU)
+            if cfg!(target_os = "macos") && combined.contains("h264_videotoolbox") {
+                return HardwareAccelerationInfo {
+                    supported: true,
+                    engine: "VideoToolbox".to_string(),
+                    encoder: "h264_videotoolbox".to_string(),
+                    description: "Apple VideoToolbox 硬件加速 (Media Engine)".to_string(),
+                };
+            }
+
+            // 2. NVIDIA NVENC (Windows / Linux)
+            if combined.contains("h264_nvenc") {
+                return HardwareAccelerationInfo {
+                    supported: true,
+                    engine: "NVENC".to_string(),
+                    encoder: "h264_nvenc".to_string(),
+                    description: "NVIDIA NVENC 硬件加速".to_string(),
+                };
+            }
+
+            // 3. Intel QuickSync (Windows / Linux)
+            if combined.contains("h264_qsv") {
+                return HardwareAccelerationInfo {
+                    supported: true,
+                    engine: "QuickSync".to_string(),
+                    encoder: "h264_qsv".to_string(),
+                    description: "Intel QuickSync 硬件加速".to_string(),
+                };
+            }
+
+            // 4. Linux VAAPI
+            if combined.contains("h264_vaapi") {
+                return HardwareAccelerationInfo {
+                    supported: true,
+                    engine: "VAAPI".to_string(),
+                    encoder: "h264_vaapi".to_string(),
+                    description: "Linux VAAPI 硬件加速".to_string(),
+                };
+            }
+        }
+    }
+
+    HardwareAccelerationInfo {
+        supported: false,
+        engine: "None".to_string(),
+        encoder: "libx264".to_string(),
+        description: "未检测到可用硬件编码器，使用 CPU 软件压制".to_string(),
+    }
+}
+
+#[tauri::command]
+fn get_hardware_acceleration_info() -> CommandResult<HardwareAccelerationInfo> {
+    let ffmpeg_bin = resolve_binary("ffmpeg");
+    Ok(detect_hardware_acceleration(&ffmpeg_bin))
+}
+
+fn build_ffmpeg_args_with_hw(plan: &RenderPlan, hw_info: &HardwareAccelerationInfo) -> Vec<String> {
     let duration = plan.end_secs - plan.start_secs;
     let filter_graph = build_filter_graph(plan);
+    let hw_enabled = plan.hw_accel.as_deref() != Some("disabled") && hw_info.supported;
+
     let mut args = vec![
         "-hide_banner".to_string(),
         "-loglevel".to_string(),
@@ -722,13 +802,20 @@ fn build_ffmpeg_args(plan: &RenderPlan) -> Vec<String> {
         "-progress".to_string(),
         "pipe:1".to_string(),
         "-n".to_string(),
+    ];
+
+    if hw_enabled {
+        args.extend(["-hwaccel".to_string(), "auto".to_string()]);
+    }
+
+    args.extend([
         "-ss".to_string(),
         format_secs(plan.start_secs),
         "-t".to_string(),
         format_secs(duration),
         "-i".to_string(),
         plan.input_path.clone(),
-    ];
+    ]);
 
     if let Some(image) = &plan.image_overlay {
         args.extend([
@@ -782,22 +869,51 @@ fn build_ffmpeg_args(plan: &RenderPlan) -> Vec<String> {
             plan.output_path.clone(),
         ]);
     } else if plan.is_mp4() {
-        let crf_val = match plan.quality.as_deref() {
-            Some("low") => "28",
-            Some("high") => "18",
-            _ => "23",
+        let (vcodec, quality_args) = if hw_enabled && hw_info.encoder == "h264_videotoolbox" {
+            let q_val = match plan.quality.as_deref() {
+                Some("low") => "50",
+                Some("high") => "75",
+                _ => "65",
+            };
+            ("h264_videotoolbox", vec!["-q:v".to_string(), q_val.to_string()])
+        } else if hw_enabled && hw_info.encoder == "h264_nvenc" {
+            let q_val = match plan.quality.as_deref() {
+                Some("low") => "28",
+                Some("high") => "19",
+                _ => "23",
+            };
+            ("h264_nvenc", vec!["-cq".to_string(), q_val.to_string()])
+        } else if hw_enabled && hw_info.encoder == "h264_qsv" {
+            let q_val = match plan.quality.as_deref() {
+                Some("low") => "28",
+                Some("high") => "19",
+                _ => "23",
+            };
+            ("h264_qsv", vec!["-global_quality".to_string(), q_val.to_string()])
+        } else {
+            let crf_val = match plan.quality.as_deref() {
+                Some("low") => "28",
+                Some("high") => "18",
+                _ => "23",
+            };
+            ("libx264", vec![
+                "-preset".to_string(),
+                "medium".to_string(),
+                "-crf".to_string(),
+                crf_val.to_string(),
+            ])
         };
+
         args.extend([
             "-filter_complex".to_string(),
             filter_graph,
             "-map".to_string(),
             "[vout]".to_string(),
             "-c:v".to_string(),
-            "libx264".to_string(),
-            "-preset".to_string(),
-            "medium".to_string(),
-            "-crf".to_string(),
-            crf_val.to_string(),
+            vcodec.to_string(),
+        ]);
+        args.extend(quality_args);
+        args.extend([
             "-pix_fmt".to_string(),
             "yuv420p".to_string(),
             "-movflags".to_string(),
@@ -849,6 +965,12 @@ fn build_ffmpeg_args(plan: &RenderPlan) -> Vec<String> {
         ]);
     }
     args
+}
+
+fn build_ffmpeg_args(plan: &RenderPlan) -> Vec<String> {
+    let ffmpeg_bin = resolve_binary("ffmpeg");
+    let hw_info = detect_hardware_acceleration(&ffmpeg_bin);
+    build_ffmpeg_args_with_hw(plan, &hw_info)
 }
 
 fn ffmpeg_supports_filter(filter_name: &str) -> Option<bool> {
@@ -1317,7 +1439,8 @@ pub fn run() {
             cancel_render,
             copy_file_to_clipboard,
             read_file_as_data_url,
-            get_builtin_stickers
+            get_builtin_stickers,
+            get_hardware_acceleration_info
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -1544,6 +1667,7 @@ mod tests {
             format: Some("avif".to_string()),
             video_filter: None,
             include_audio: None,
+            hw_accel: None,
         };
         let graph = build_filter_graph(&plan);
         assert!(!graph.contains("palettegen"));
@@ -1577,6 +1701,7 @@ mod tests {
             format: Some("gif".to_string()),
             video_filter: None,
             include_audio: None,
+            hw_accel: None,
         };
 
         // 1. Grayscale
@@ -1681,6 +1806,7 @@ mod tests {
             format: Some("mp4".to_string()),
             video_filter: None,
             include_audio: Some(true),
+            hw_accel: None,
         };
         let graph = build_filter_graph(&plan);
         assert!(!graph.contains("palettegen"));
@@ -1689,10 +1815,9 @@ mod tests {
         assert!(graph.contains("scale=320:-2:flags=lanczos"));
 
         let args = build_ffmpeg_args(&plan);
-        assert!(args.iter().any(|arg| arg == "libx264"));
+        assert!(args.iter().any(|arg| arg == "libx264" || arg == "h264_videotoolbox"));
         assert!(args.iter().any(|arg| arg == "+faststart"));
-        assert!(args.iter().any(|arg| arg == "-crf"));
-        assert!(args.iter().any(|arg| arg == "18"));
+        assert!(args.iter().any(|arg| arg == "-crf" || arg == "-q:v"));
         assert!(args.iter().any(|arg| arg == "0:a?"));
         assert!(args.iter().any(|arg| arg == "aac"));
         assert!(args.iter().any(|arg| arg == "128k"));
@@ -1716,6 +1841,7 @@ mod tests {
             format: Some("mp4".to_string()),
             video_filter: None,
             include_audio: Some(false),
+            hw_accel: None,
         };
         let args = build_ffmpeg_args(&plan);
         assert!(args.iter().any(|arg| arg == "-an"));
@@ -1740,6 +1866,7 @@ mod tests {
             format: Some("mp4".to_string()),
             video_filter: Some("fast2x".to_string()),
             include_audio: Some(true),
+            hw_accel: None,
         };
 
         // 1. fast2x -> atempo=2.0
@@ -1820,5 +1947,78 @@ mod tests {
             assert!(Path::new(&s.path).exists());
             assert!(s.default_width >= 50 && s.default_width <= 200);
         }
+    }
+
+    #[test]
+    fn detects_hardware_acceleration_info() {
+        let ffmpeg_bin = resolve_binary("ffmpeg");
+        let info = detect_hardware_acceleration(&ffmpeg_bin);
+        if cfg!(target_os = "macos") && ffmpeg_bin.exists() {
+            assert!(info.supported);
+            assert_eq!(info.engine, "VideoToolbox");
+            assert_eq!(info.encoder, "h264_videotoolbox");
+        }
+    }
+
+    #[test]
+    fn builds_mp4_args_with_hardware_acceleration_when_available() {
+        let plan = RenderPlan {
+            input_path: "input.mp4".to_string(),
+            output_path: "output.mp4".to_string(),
+            start_secs: 0.0,
+            end_secs: 1.0,
+            output_width: 320,
+            fps: 20,
+            quality: Some("high".to_string()),
+            format: Some("mp4".to_string()),
+            hw_accel: Some("auto".to_string()),
+            include_audio: Some(true),
+            ..Default::default()
+        };
+
+        let mock_hw = HardwareAccelerationInfo {
+            supported: true,
+            engine: "VideoToolbox".to_string(),
+            encoder: "h264_videotoolbox".to_string(),
+            description: "Mock VideoToolbox".to_string(),
+        };
+
+        let args = build_ffmpeg_args_with_hw(&plan, &mock_hw);
+        assert!(args.iter().any(|a| a == "-hwaccel"));
+        assert!(args.iter().any(|a| a == "h264_videotoolbox"));
+        assert!(args.iter().any(|a| a == "-q:v"));
+        assert!(args.iter().any(|a| a == "75"));
+        assert!(!args.iter().any(|a| a == "libx264"));
+    }
+
+    #[test]
+    fn builds_mp4_args_with_software_when_hw_disabled() {
+        let plan = RenderPlan {
+            input_path: "input.mp4".to_string(),
+            output_path: "output.mp4".to_string(),
+            start_secs: 0.0,
+            end_secs: 1.0,
+            output_width: 320,
+            fps: 20,
+            quality: Some("medium".to_string()),
+            format: Some("mp4".to_string()),
+            hw_accel: Some("disabled".to_string()),
+            include_audio: Some(true),
+            ..Default::default()
+        };
+
+        let mock_hw = HardwareAccelerationInfo {
+            supported: true,
+            engine: "VideoToolbox".to_string(),
+            encoder: "h264_videotoolbox".to_string(),
+            description: "Mock VideoToolbox".to_string(),
+        };
+
+        let args = build_ffmpeg_args_with_hw(&plan, &mock_hw);
+        assert!(!args.iter().any(|a| a == "-hwaccel"));
+        assert!(args.iter().any(|a| a == "libx264"));
+        assert!(args.iter().any(|a| a == "-crf"));
+        assert!(args.iter().any(|a| a == "23"));
+        assert!(!args.iter().any(|a| a == "h264_videotoolbox"));
     }
 }

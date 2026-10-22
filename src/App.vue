@@ -5,6 +5,7 @@ import {
   copyFileToClipboard,
   getBuiltinStickers,
   getDesktopInfo,
+  getHardwareAccelerationInfo,
   isDesktopRuntime,
   listenForRenderEvents,
   pickMediaOutput,
@@ -18,6 +19,8 @@ import {
   type DesktopInfo,
   type ExportFormat,
   type ExportRecord,
+  type HardwareAccelerationInfo,
+  type HwAccelPolicy,
   type MediaInfo,
   type RenderPlan,
 } from "./lib/desktop";
@@ -57,6 +60,8 @@ const inputPath = ref("");
 const outputPath = ref("");
 const exportFormat = ref<ExportFormat>("gif");
 const includeAudio = ref(true);
+const hwAccelInfo = ref<HardwareAccelerationInfo | null>(null);
+const hwAccelPolicy = ref<HwAccelPolicy>("auto");
 const status = ref<TaskStatus>("idle");
 const progress = ref(0);
 const statusMessage = ref("选择一个视频开始制作。");
@@ -997,6 +1002,7 @@ function buildRenderPlan(): RenderPlan {
     outputPath: finalOut,
     format: exportFormat.value,
     includeAudio: includeAudio.value,
+    hwAccel: hwAccelPolicy.value,
     startSecs: Number(startSecs.value),
     endSecs: Number(endSecs.value),
     crop: useCrop.value ? { ...crop } : null,
@@ -1227,6 +1233,10 @@ async function loadHistoryPlan(record: ExportRecord): Promise<void> {
 
   if (p.includeAudio !== undefined) {
     includeAudio.value = p.includeAudio;
+  }
+
+  if (p.hwAccel !== undefined) {
+    hwAccelPolicy.value = p.hwAccel;
   }
 
   if (p.videoFilter) {
@@ -1722,6 +1732,7 @@ function buildCurrentDraft(): StudioDraft {
     quality: currentQuality.value,
     format: exportFormat.value,
     includeAudio: includeAudio.value,
+    hwAccel: hwAccelPolicy.value,
     videoFilter: currentVideoFilter.value,
     selectedPresetId: selectedPresetId.value,
     useText: useText.value,
@@ -1783,6 +1794,7 @@ function resetWorkspace(): void {
   selectedPresetId.value = "custom";
   exportFormat.value = "gif";
   includeAudio.value = true;
+  hwAccelPolicy.value = "auto";
   useText.value = false;
   textLayers.value = [
     {
@@ -1835,6 +1847,9 @@ async function restoreDraftIfAvailable(): Promise<void> {
         exportFormat.value = draft.format;
         if (draft.includeAudio !== undefined) {
           includeAudio.value = draft.includeAudio;
+        }
+        if (draft.hwAccel) {
+          hwAccelPolicy.value = draft.hwAccel;
         }
         currentVideoFilter.value = (draft.videoFilter as VideoFilterKey) || "none";
         selectedPresetId.value = draft.selectedPresetId;
@@ -1922,6 +1937,7 @@ watch(
     currentQuality,
     exportFormat,
     includeAudio,
+    hwAccelPolicy,
     selectedPresetId,
     useText,
     text,
@@ -1964,6 +1980,7 @@ onMounted(async () => {
     builtinStickers.value = await getBuiltinStickers();
     window.addEventListener("keydown", handleKeydown);
     desktopInfo.value = await getDesktopInfo();
+    hwAccelInfo.value = await getHardwareAccelerationInfo();
     await connectDesktopEvents();
     await restoreDraftIfAvailable();
     if (stageRef.value && typeof ResizeObserver !== "undefined") {
@@ -2603,6 +2620,32 @@ onBeforeUnmount(() => {
                 <input v-model="outputPath" type="text" :placeholder="exportFormat === 'mp4' ? 'MP4 输出路径' : exportFormat === 'avif' ? 'AVIF 输出路径' : exportFormat === 'webp' ? 'WebP 输出路径' : 'GIF 输出路径'" />
                 <button type="button" aria-label="选择输出路径" @click="chooseOutput">…</button>
               </div>
+
+              <!-- 硬件加速模式指示与切换 -->
+              <div class="hw-accel-row" :class="{ 'is-disabled': hwAccelPolicy === 'disabled' }">
+                <div class="hw-accel-info">
+                  <span class="hw-accel-icon" :class="{ 'is-active': hwAccelPolicy === 'auto' && hwAccelInfo?.supported }">
+                    {{ hwAccelPolicy === 'auto' && hwAccelInfo?.supported ? '⚡' : '⚙' }}
+                  </span>
+                  <div class="hw-accel-text">
+                    <span class="hw-accel-title">
+                      {{ hwAccelPolicy === 'auto' && hwAccelInfo?.supported ? `硬件加速 · ${hwAccelInfo.engine}` : (hwAccelPolicy === 'disabled' ? 'CPU 软件压制 (已手动停用)' : 'CPU 软件压制') }}
+                    </span>
+                    <small class="hw-accel-desc">
+                      {{ hwAccelPolicy === 'auto' && hwAccelInfo?.supported ? hwAccelInfo.description : '使用 CPU 纯软件逐帧运算，兼容性高' }}
+                    </small>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  class="hw-toggle-btn"
+                  :class="{ 'is-on': hwAccelPolicy === 'auto' }"
+                  :title="hwAccelPolicy === 'auto' ? '点击切换为纯 CPU 软件编码' : '点击开启 GPU 硬件加速'"
+                  @click="hwAccelPolicy = hwAccelPolicy === 'auto' ? 'disabled' : 'auto'"
+                >
+                  {{ hwAccelPolicy === 'auto' ? 'GPU 加速 ON' : '纯软件 OFF' }}
+                </button>
+              </div>
             </div>
           </aside>
         </section>
@@ -2622,6 +2665,9 @@ onBeforeUnmount(() => {
           <div class="export-actions">
             <span v-if="status === 'completed'" class="output-size">{{ formatBytes(outputBytes) }}</span>
             <span v-else-if="media" class="preset-summary-badge">{{ currentPresetInfo.name }} · {{ currentPresetInfo.badge }}</span>
+            <span v-if="hwAccelPolicy === 'auto' && hwAccelInfo?.supported" class="hw-accel-badge" title="当前已激活 GPU 硬件编解码加速">
+              ⚡ {{ hwAccelInfo.engine }}
+            </span>
             <template v-if="status === 'completed' && outputPath">
               <button
                 class="secondary-action"
