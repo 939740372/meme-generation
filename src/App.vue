@@ -508,10 +508,6 @@ function applyPreset(preset: ExportPreset): void {
   outputWidth.value = preset.width;
   fps.value = preset.fps;
   currentQuality.value = preset.quality;
-  if (media.value && useCrop.value) {
-    crop.width = Math.min(media.value.width, preset.width);
-    crop.height = Math.min(media.value.height, Math.round(crop.width * 0.5625));
-  }
 }
 
 function onManualParameterChange(): void {
@@ -726,6 +722,41 @@ const stageSize = reactive({ width: 0, height: 0 });
 const isDraggingText = ref(false);
 const isDraggingImage = ref(false);
 
+const viewportRect = computed(() => {
+  if (!media.value || stageSize.width <= 0 || stageSize.height <= 0) {
+    return {
+      left: 0,
+      top: 0,
+      width: stageSize.width || 0,
+      height: stageSize.height || 0,
+      scale: 1,
+    };
+  }
+
+  const mediaW = media.value.width;
+  const mediaH = media.value.height;
+  if (mediaW <= 0 || mediaH <= 0) {
+    return {
+      left: 0,
+      top: 0,
+      width: stageSize.width,
+      height: stageSize.height,
+      scale: 1,
+    };
+  }
+
+  const scaleW = stageSize.width / mediaW;
+  const scaleH = stageSize.height / mediaH;
+  const scale = Math.min(scaleW, scaleH);
+
+  const width = Math.round(mediaW * scale);
+  const height = Math.round(mediaH * scale);
+  const left = Math.round((stageSize.width - width) / 2);
+  const top = Math.round((stageSize.height - height) / 2);
+
+  return { left, top, width, height, scale };
+});
+
 const startPercent = computed(() => {
   const duration = media.value?.durationSecs ?? 0;
   return duration > 0 ? (startSecs.value / duration) * 100 : 0;
@@ -755,14 +786,13 @@ function getTextLayerStyle(layer: CanvasTextLayer): Record<string, string | numb
   let fontSize = layer.size;
   let strokeW = layer.strokeWidth;
 
-  if (media.value && stageSize.width > 0 && stageSize.height > 0) {
-    const scaleX = stageSize.width / media.value.width;
-    const scaleY = stageSize.height / media.value.height;
-    left = Math.round(layer.x * scaleX);
-    top = Math.round(layer.y * scaleY);
-    fontSize = Math.max(12, Math.min(Math.round(layer.size * scaleX), 72));
+  const scale = viewportRect.value.scale;
+  if (media.value && scale > 0) {
+    left = Math.round(layer.x * scale);
+    top = Math.round(layer.y * scale);
+    fontSize = Math.max(10, Math.min(Math.round(layer.size * scale), 120));
     if (strokeW > 0) {
-      strokeW = Math.max(1, Math.round(layer.strokeWidth * scaleX));
+      strokeW = Math.max(1, Math.round(layer.strokeWidth * scale));
     }
   }
 
@@ -780,7 +810,7 @@ function getTextLayerStyle(layer: CanvasTextLayer): Record<string, string | numb
     styles["-webkit-text-stroke"] = `${strokeW}px ${layer.strokeColor}`;
   }
   if (layer.shadowOffset && layer.shadowOffset > 0) {
-    const sOffset = layer.shadowOffset;
+    const sOffset = Math.max(1, Math.round(layer.shadowOffset * scale));
     const sCol = layer.shadowColor || "#000000";
     styles.textShadow = `${sOffset}px ${sOffset}px 2px ${sCol}`;
   }
@@ -810,18 +840,18 @@ function getArcCharStyle(layer: CanvasTextLayer, charIdx: number, totalChars: nu
 }
 
 const imageDisplayLeft = computed(() => {
-  if (!media.value || stageSize.width <= 0) return imageX.value;
-  return imageX.value * (stageSize.width / media.value.width);
+  if (!media.value || viewportRect.value.scale <= 0) return imageX.value;
+  return Math.round(imageX.value * viewportRect.value.scale);
 });
 
 const imageDisplayTop = computed(() => {
-  if (!media.value || stageSize.height <= 0) return imageY.value;
-  return imageY.value * (stageSize.height / media.value.height);
+  if (!media.value || viewportRect.value.scale <= 0) return imageY.value;
+  return Math.round(imageY.value * viewportRect.value.scale);
 });
 
 const imageDisplayWidth = computed(() => {
-  if (!media.value || stageSize.width <= 0) return imageWidth.value;
-  return Math.max(28, imageWidth.value * (stageSize.width / media.value.width));
+  if (!media.value || viewportRect.value.scale <= 0) return imageWidth.value;
+  return Math.max(28, Math.round(imageWidth.value * viewportRect.value.scale));
 });
 
 function updateStageSize(): void {
@@ -926,12 +956,12 @@ function startDragText(layer: CanvasTextLayer, event: PointerEvent): void {
   const startClientY = event.clientY;
   const initX = layer.x;
   const initY = layer.y;
-  const scaleX = stageRef.value.clientWidth / media.value.width;
-  const scaleY = stageRef.value.clientHeight / media.value.height;
+  const scale = viewportRect.value.scale;
+  if (scale <= 0) return;
 
   const onPointerMove = (e: PointerEvent): void => {
-    const deltaX = (e.clientX - startClientX) / scaleX;
-    const deltaY = (e.clientY - startClientY) / scaleY;
+    const deltaX = (e.clientX - startClientX) / scale;
+    const deltaY = (e.clientY - startClientY) / scale;
     const newX = Math.round(initX + deltaX);
     const newY = Math.round(initY + deltaY);
     layer.x = Math.max(0, Math.min(media.value!.width - 20, newX));
@@ -957,12 +987,12 @@ function startDragImage(event: PointerEvent): void {
   const startClientY = event.clientY;
   const initX = imageX.value;
   const initY = imageY.value;
-  const scaleX = stageRef.value.clientWidth / media.value.width;
-  const scaleY = stageRef.value.clientHeight / media.value.height;
+  const scale = viewportRect.value.scale;
+  if (scale <= 0) return;
 
   const onPointerMove = (e: PointerEvent): void => {
-    const deltaX = (e.clientX - startClientX) / scaleX;
-    const deltaY = (e.clientY - startClientY) / scaleY;
+    const deltaX = (e.clientX - startClientX) / scale;
+    const deltaY = (e.clientY - startClientY) / scale;
     const newX = Math.round(initX + deltaX);
     const newY = Math.round(initY + deltaY);
     imageX.value = Math.max(0, Math.min(media.value!.width - 20, newX));
@@ -986,10 +1016,11 @@ function startResizeImage(event: PointerEvent): void {
   isResizingImage.value = true;
   const startClientX = event.clientX;
   const initWidth = imageWidth.value;
-  const scaleX = stageRef.value.clientWidth / media.value.width;
+  const scale = viewportRect.value.scale;
+  if (scale <= 0) return;
 
   const onPointerMove = (e: PointerEvent): void => {
-    const deltaX = (e.clientX - startClientX) / scaleX;
+    const deltaX = (e.clientX - startClientX) / scale;
     const newWidth = Math.round(initWidth + deltaX);
     imageWidth.value = Math.max(20, Math.min(media.value!.width, newWidth));
   };
@@ -1005,23 +1036,23 @@ function startResizeImage(event: PointerEvent): void {
 }
 
 const cropDisplayLeft = computed(() => {
-  if (!media.value || stageSize.width <= 0) return crop.x;
-  return crop.x * (stageSize.width / media.value.width);
+  if (!media.value || viewportRect.value.scale <= 0) return crop.x;
+  return Math.round(crop.x * viewportRect.value.scale);
 });
 
 const cropDisplayTop = computed(() => {
-  if (!media.value || stageSize.height <= 0) return crop.y;
-  return crop.y * (stageSize.height / media.value.height);
+  if (!media.value || viewportRect.value.scale <= 0) return crop.y;
+  return Math.round(crop.y * viewportRect.value.scale);
 });
 
 const cropDisplayWidth = computed(() => {
-  if (!media.value || stageSize.width <= 0) return crop.width;
-  return Math.max(16, crop.width * (stageSize.width / media.value.width));
+  if (!media.value || viewportRect.value.scale <= 0) return crop.width;
+  return Math.max(16, Math.round(crop.width * viewportRect.value.scale));
 });
 
 const cropDisplayHeight = computed(() => {
-  if (!media.value || stageSize.height <= 0) return crop.height;
-  return Math.max(16, crop.height * (stageSize.height / media.value.height));
+  if (!media.value || viewportRect.value.scale <= 0) return crop.height;
+  return Math.max(16, Math.round(crop.height * viewportRect.value.scale));
 });
 
 const isCropNearTop = computed(() => cropDisplayTop.value < 28);
@@ -1040,14 +1071,15 @@ function startDragCrop(event: PointerEvent): void {
   const startClientY = event.clientY;
   const initX = crop.x;
   const initY = crop.y;
-  const scaleX = stageRef.value.clientWidth / media.value.width;
-  const scaleY = stageRef.value.clientHeight / media.value.height;
+  const scale = viewportRect.value.scale;
+  if (scale <= 0) return;
+
   const maxX = Math.max(0, media.value.width - crop.width);
   const maxY = Math.max(0, media.value.height - crop.height);
 
   const onPointerMove = (e: PointerEvent): void => {
-    const deltaX = (e.clientX - startClientX) / scaleX;
-    const deltaY = (e.clientY - startClientY) / scaleY;
+    const deltaX = (e.clientX - startClientX) / scale;
+    const deltaY = (e.clientY - startClientY) / scale;
     crop.x = Math.max(0, Math.min(maxX, Math.round(initX + deltaX)));
     crop.y = Math.max(0, Math.min(maxY, Math.round(initY + deltaY)));
   };
@@ -1076,16 +1108,17 @@ function startResizeCrop(handle: string, event: PointerEvent): void {
   const initY = crop.y;
   const initW = crop.width;
   const initH = crop.height;
-  const scaleX = stageRef.value.clientWidth / media.value.width;
-  const scaleY = stageRef.value.clientHeight / media.value.height;
+  const scale = viewportRect.value.scale;
+  if (scale <= 0) return;
+
   const minW = 20;
   const minH = 20;
   const mediaW = media.value.width;
   const mediaH = media.value.height;
 
   const onPointerMove = (e: PointerEvent): void => {
-    const deltaX = (e.clientX - startClientX) / scaleX;
-    const deltaY = (e.clientY - startClientY) / scaleY;
+    const deltaX = (e.clientX - startClientX) / scale;
+    const deltaY = (e.clientY - startClientY) / scale;
 
     if (handle.includes("e")) {
       const maxW = mediaW - initX;
@@ -1121,16 +1154,10 @@ function startResizeCrop(handle: string, event: PointerEvent): void {
 
 function cropCenter(): void {
   if (!media.value) return;
-  crop.x = Math.max(0, Math.floor((media.value.width - crop.width) / 2));
-  crop.y = Math.max(0, Math.floor((media.value.height - crop.height) / 2));
-}
-
-function cropSquare(): void {
-  if (!media.value) return;
-  const side = Math.min(media.value.width, media.value.height, crop.width || 320);
-  crop.width = side;
-  crop.height = side;
-  cropCenter();
+  crop.width = Math.min(crop.width, media.value.width);
+  crop.height = Math.min(crop.height, media.value.height);
+  crop.x = Math.max(0, Math.min(media.value.width - crop.width, Math.floor((media.value.width - crop.width) / 2)));
+  crop.y = Math.max(0, Math.min(media.value.height - crop.height, Math.floor((media.value.height - crop.height) / 2)));
 }
 
 function cropReset(): void {
@@ -1140,6 +1167,73 @@ function cropReset(): void {
   crop.width = media.value.width;
   crop.height = media.value.height;
 }
+
+function cropSquare(): void {
+  if (!media.value) return;
+  const side = Math.min(media.value.width, media.value.height);
+  crop.width = side;
+  crop.height = side;
+  cropCenter();
+}
+
+function crop16x9(): void {
+  if (!media.value) return;
+  const videoAspect = media.value.width / media.value.height;
+  const targetAspect = 16 / 9;
+  if (videoAspect >= targetAspect) {
+    crop.height = media.value.height;
+    crop.width = Math.round(crop.height * targetAspect);
+  } else {
+    crop.width = media.value.width;
+    crop.height = Math.round(crop.width / targetAspect);
+  }
+  cropCenter();
+}
+
+function crop9x16(): void {
+  if (!media.value) return;
+  const videoAspect = media.value.width / media.value.height;
+  const targetAspect = 9 / 16;
+  if (videoAspect >= targetAspect) {
+    crop.height = media.value.height;
+    crop.width = Math.round(crop.height * targetAspect);
+  } else {
+    crop.width = media.value.width;
+    crop.height = Math.round(crop.width / targetAspect);
+  }
+  cropCenter();
+}
+
+function crop4x3(): void {
+  if (!media.value) return;
+  const videoAspect = media.value.width / media.value.height;
+  const targetAspect = 4 / 3;
+  if (videoAspect >= targetAspect) {
+    crop.height = media.value.height;
+    crop.width = Math.round(crop.height * targetAspect);
+  } else {
+    crop.width = media.value.width;
+    crop.height = Math.round(crop.width / targetAspect);
+  }
+  cropCenter();
+}
+
+watch(
+  [() => crop.x, () => crop.y, () => crop.width, () => crop.height],
+  ([x, y, w, h]) => {
+    if (!media.value) return;
+    const maxW = media.value.width;
+    const maxH = media.value.height;
+    if (w > maxW) crop.width = maxW;
+    if (h > maxH) crop.height = maxH;
+    if (crop.width > 0 && x + crop.width > maxW) {
+      crop.x = Math.max(0, maxW - crop.width);
+    }
+    if (crop.height > 0 && y + crop.height > maxH) {
+      crop.y = Math.max(0, maxH - crop.height);
+    }
+  }
+);
 
 const isDesktop = computed(() => isDesktopRuntime());
 const isBusy = computed(() => status.value === "probing" || status.value === "rendering");
@@ -1179,12 +1273,6 @@ const renderErrorLabels: Record<string, string> = {
   PROCESS_UNAVAILABLE: "无法访问 FFmpeg 进程。",
   CANCEL_FAILED: "取消 FFmpeg 任务失败。",
 };
-const previewStyle = computed(() => {
-  if (!media.value) {
-    return {};
-  }
-  return { aspectRatio: `${media.value.width} / ${media.value.height}` };
-});
 
 function basenameWithoutExtension(path: string): string {
   const fileName = path.split(/[\\/]/).pop() ?? "meme";
@@ -1239,10 +1327,13 @@ function applyMediaDefaults(nextMedia: MediaInfo): void {
   const suggestedEnd = Math.min(nextMedia.durationSecs, 3);
   endSecs.value = Number(suggestedEnd.toFixed(2));
   applyPreset(PRESETS[1]); // 默认应用微信大表情 (320px, 12fps)
-  crop.width = Math.min(nextMedia.width, outputWidth.value);
-  crop.height = Math.min(nextMedia.height, Math.round(crop.width * 0.5625));
-  crop.x = Math.max(0, Math.floor((nextMedia.width - crop.width) / 2));
-  crop.y = Math.max(0, Math.floor((nextMedia.height - crop.height) / 2));
+  crop.x = 0;
+  crop.y = 0;
+  crop.width = nextMedia.width;
+  crop.height = nextMedia.height;
+  nextTick(() => {
+    updateStageSize();
+  });
 }
 
 async function chooseVideo(): Promise<void> {
@@ -2645,9 +2736,17 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <div ref="stageRef" class="preview-stage" :style="previewStyle">
+            <div ref="stageRef" class="preview-stage">
               <template v-if="media">
-                <div class="preview-art">
+                <div
+                  class="preview-art"
+                  :style="{
+                    left: `${viewportRect.left}px`,
+                    top: `${viewportRect.top}px`,
+                    width: `${viewportRect.width}px`,
+                    height: `${viewportRect.height}px`,
+                  }"
+                >
                   <!-- 视频真实画面层 (带全局滤镜) -->
                   <div class="preview-media-container" :style="{ filter: currentVideoFilterCss }">
                     <video
@@ -2780,9 +2879,10 @@ onBeforeUnmount(() => {
                     </div>
                   </div>
 
-                  <div class="preview-caption">
-                    {{ useCrop ? `裁切中 · ${crop.width} × ${crop.height} · 可拖拽平移或缩放选区` : `源画面 · ${media.width} × ${media.height} · 支持画布拖拽排版` }}
-                  </div>
+                </div>
+
+                <div class="preview-caption">
+                  {{ useCrop ? `裁切中 · ${crop.width} × ${crop.height} · 可拖拽平移或缩放选区` : `源画面 · ${media.width} × ${media.height} · 支持画布拖拽排版` }}
                 </div>
                 <!-- 真实可点击的播放控制浮层 (仅在原生支持时可播放) -->
                 <div
@@ -2966,8 +3066,11 @@ onBeforeUnmount(() => {
                 <label class="toggle-row"><input v-model="useCrop" type="checkbox" /><span class="toggle-ui"></span><span>裁切</span><em v-if="useCrop">{{ crop.width }} × {{ crop.height }}</em></label>
                 <div v-if="useCrop" class="crop-quick-actions">
                   <button type="button" class="crop-mini-btn" title="裁切选框居中" @click="cropCenter">居中</button>
+                  <button type="button" class="crop-mini-btn" title="铺满全画面" @click="cropReset">铺满</button>
                   <button type="button" class="crop-mini-btn" title="1:1 正方形比例" @click="cropSquare">1:1</button>
-                  <button type="button" class="crop-mini-btn" title="重置铺满全画面" @click="cropReset">铺满</button>
+                  <button type="button" class="crop-mini-btn" title="16:9 横屏比例" @click="crop16x9">16:9</button>
+                  <button type="button" class="crop-mini-btn" title="9:16 竖屏比例" @click="crop9x16">9:16</button>
+                  <button type="button" class="crop-mini-btn" title="4:3 经典比例" @click="crop4x3">4:3</button>
                 </div>
               </div>
               <div v-if="useCrop" class="field-grid four-up crop-grid">
