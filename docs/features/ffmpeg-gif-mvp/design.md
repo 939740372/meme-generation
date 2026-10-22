@@ -1,6 +1,6 @@
 # 设计文档：FFmpeg GIF MVP
 
-- 状态：ready-to-merge
+- 状态：merged
 - Feature slug：ffmpeg-gif-mvp
 - 分支：feature/ffmpeg-gif-mvp
 - 负责人：待定

@@ -19,23 +19,22 @@
 
 本次 `feature/ffmpeg-gif-mvp` 先交付本机 FFmpeg 验证版；sidecar 分发、跨平台打包和完整桌面交互仍需后续验收。
 
-#### 本次最小闭环（verifying）
+#### 本次最小闭环（已完成并合并到 main）
 
 - [x] Tauri dialog 选择视频/PNG/输出路径，并通过 ffprobe 返回媒体信息
 - [x] RenderPlan 参数校验、trim/crop/scale/fps 和 palettegen/paletteuse GIF 管线
 - [x] Rust 任务进度、取消、失败分类、输出存在性/可读性检查
 - [x] Vue 单页编辑器、参数面板、导出状态和错误反馈
 - [x] 用临时短视频和 PNG 完成真实 GIF/overlay 冒烟
-- [ ] 带 `drawtext` 的 FFmpeg 构建、sidecar 来源/许可证、跨平台产物和桌面交互验收
-
-- [ ] 确定 FFmpeg sidecar 的版本、平台和许可证策略
-- [ ] 建立 FFmpeg 探测、版本读取和错误归一化服务
-- [ ] 支持视频导入、媒体信息读取和首帧/缩略图预览
-- [ ] 支持开始时间、结束时间、裁切区域、输出宽度和 FPS
-- [ ] 支持文字和 PNG 图案叠加
-- [ ] 使用调色板流程导出 GIF
-- [ ] 显示进度、取消任务、失败原因和输出文件位置
-- [ ] 增加一个端到端样例视频和可重复的导出验收用例
+- [x] 建立 FFmpeg 探测、版本读取和错误归一化服务
+- [x] 支持视频导入、媒体信息读取和基础预览
+- [x] 支持开始时间、结束时间、裁切区域、输出宽度和 FPS
+- [x] 支持文字和 PNG 图案叠加（含本机 drawtext 能力检查与降级处理）
+- [x] 使用调色板流程导出 GIF
+- [x] 显示进度、取消任务、失败原因和输出文件位置
+- [x] 增加端到端冒烟验证用例
+- [ ] 确定跨平台 FFmpeg sidecar 的版本、构建来源与许可证分发策略
+- [ ] 引入包含 libfreetype (drawtext) 的 FFmpeg sidecar 及三平台（macOS/Win/Linux）打包验收
 
 ### P2：创作工作区
 

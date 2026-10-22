@@ -1,6 +1,6 @@
 # 细化 TODO：FFmpeg GIF MVP
 
-- 状态：ready-to-merge
+- 状态：merged
 - Feature slug：ffmpeg-gif-mvp
 - 分支：feature/ffmpeg-gif-mvp
 - 负责人：待定
@@ -62,4 +62,4 @@
 - [x] 同步根目录 TODO.md 的里程碑
 - [x] 检查 sidecar、字体和素材许可证
 - [x] 检查敏感文件、用户媒体和生成物未进入提交
-- [ ] 提交、合并 main，并将文档状态更新为 merged
+- [x] 提交、合并 main，并将文档状态更新为 merged
