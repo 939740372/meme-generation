@@ -17,6 +17,17 @@
 
 详细文档：docs/features/ffmpeg-gif-mvp/
 
+本次 `feature/ffmpeg-gif-mvp` 先交付本机 FFmpeg 验证版；sidecar 分发、跨平台打包和完整桌面交互仍需后续验收。
+
+#### 本次最小闭环（verifying）
+
+- [x] Tauri dialog 选择视频/PNG/输出路径，并通过 ffprobe 返回媒体信息
+- [x] RenderPlan 参数校验、trim/crop/scale/fps 和 palettegen/paletteuse GIF 管线
+- [x] Rust 任务进度、取消、失败分类、输出存在性/可读性检查
+- [x] Vue 单页编辑器、参数面板、导出状态和错误反馈
+- [x] 用临时短视频和 PNG 完成真实 GIF/overlay 冒烟
+- [ ] 带 `drawtext` 的 FFmpeg 构建、sidecar 来源/许可证、跨平台产物和桌面交互验收
+
 - [ ] 确定 FFmpeg sidecar 的版本、平台和许可证策略
 - [ ] 建立 FFmpeg 探测、版本读取和错误归一化服务
 - [ ] 支持视频导入、媒体信息读取和首帧/缩略图预览
