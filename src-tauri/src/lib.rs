@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
@@ -857,6 +858,70 @@ fn cancel_render(state: State<'_, RenderState>, task_id: String) -> CommandResul
     Ok(())
 }
 
+#[tauri::command]
+fn copy_file_to_clipboard(path: String) -> CommandResult<()> {
+    let p = Path::new(&path);
+    if !p.exists() {
+        return Err(app_error("FILE_NOT_FOUND", "文件不存在，无法复制。"));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let escaped = path.replace('\\', "\\\\").replace('"', "\\\"");
+        let script = format!("set the clipboard to (POSIX file \"{}\")", escaped);
+        let status = Command::new("osascript")
+            .arg("-e")
+            .arg(&script)
+            .status();
+        match status {
+            Ok(s) if s.success() => return Ok(()),
+            Ok(s) => return Err(app_error("CLIPBOARD_ERROR", format!("剪贴板复制失败，进程退出码: {:?}", s.code()))),
+            Err(e) => return Err(app_error("CLIPBOARD_ERROR", format!("执行剪贴板命令失败: {}", e))),
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let escaped = path.replace('\'', "''");
+        let script = format!("Set-Clipboard -Path '{}'", escaped);
+        let status = Command::new("powershell")
+            .args(["-NoProfile", "-Command", &script])
+            .status();
+        match status {
+            Ok(s) if s.success() => return Ok(()),
+            Ok(s) => return Err(app_error("CLIPBOARD_ERROR", format!("剪贴板复制失败: {:?}", s.code()))),
+            Err(e) => return Err(app_error("CLIPBOARD_ERROR", format!("执行剪贴板命令失败: {}", e))),
+        }
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        Ok(())
+    }
+}
+
+#[tauri::command]
+fn read_file_as_data_url(path: String) -> CommandResult<String> {
+    let p = Path::new(&path);
+    if !p.exists() {
+        return Err(app_error("FILE_NOT_FOUND", "文件不存在。"));
+    }
+    let metadata = fs::metadata(p).map_err(|e| app_error("FILE_READ_ERROR", format!("无法读取文件信息: {}", e)))?;
+    if metadata.len() > 15 * 1024 * 1024 {
+        return Err(app_error("FILE_TOO_LARGE", "文件过大，无法生成缩略图。"));
+    }
+    let bytes = fs::read(p).map_err(|e| app_error("FILE_READ_ERROR", format!("读取文件失败: {}", e)))?;
+    let encoded = BASE64.encode(&bytes);
+    let lower = path.to_lowercase();
+    let mime = if lower.ends_with(".png") {
+        "image/png"
+    } else if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
+        "image/jpeg"
+    } else if lower.ends_with(".webp") {
+        "image/webp"
+    } else {
+        "image/gif"
+    };
+    Ok(format!("data:{};base64,{}", mime, encoded))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -868,7 +933,9 @@ pub fn run() {
             get_app_info,
             media_probe,
             render_gif,
-            cancel_render
+            cancel_render,
+            copy_file_to_clipboard,
+            read_file_as_data_url
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -941,5 +1008,31 @@ mod tests {
         let resolved = resolve_binary("mock_bin");
         assert_eq!(resolved, PathBuf::from("/custom/bin/mock"));
         env::remove_var("MOCK_BIN_BINARY");
+    }
+
+    #[test]
+    fn read_file_as_data_url_fails_on_missing_file() {
+        let res = read_file_as_data_url("/path/to/nonexistent/file.gif".to_string());
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code, "FILE_NOT_FOUND");
+    }
+
+    #[test]
+    fn read_file_as_data_url_encodes_valid_file() {
+        let temp_dir = env::temp_dir();
+        let test_file = temp_dir.join("test_sample.gif");
+        fs::write(&test_file, b"GIF89a_test_bytes").unwrap();
+        let res = read_file_as_data_url(test_file.to_string_lossy().to_string());
+        assert!(res.is_ok());
+        let url = res.unwrap();
+        assert!(url.starts_with("data:image/gif;base64,"));
+        let _ = fs::remove_file(test_file);
+    }
+
+    #[test]
+    fn copy_file_to_clipboard_fails_on_missing_file() {
+        let res = copy_file_to_clipboard("/path/to/nonexistent/file.gif".to_string());
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code, "FILE_NOT_FOUND");
     }
 }
