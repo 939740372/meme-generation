@@ -1,6 +1,6 @@
 # 任务拆解：macOS DMG 桌面安装包构建与分发验收
 
-- 状态：ready-to-merge
+- 状态：merged
 - Feature slug: desktop-packaging
 - 分支：feature/desktop-packaging
 - 负责人：Antigravity
@@ -24,5 +24,5 @@
   - [x] 3.3 记录最终 DMG 文件体积（62.72 MB）与产物哈希
 - [x] 4. 收尾与主分支合入
   - [x] 4.1 更新五件套文档状态为 `ready-to-merge` 并记录自测结果
-  - [ ] 4.2 非快进合并至 `main`
-  - [ ] 4.3 文档状态变更为 `merged`，同步根目录 `TODO.md`，推送到远程仓库
+  - [x] 4.2 非快进合并至 `main`
+  - [x] 4.3 文档状态变更为 `merged`，同步根目录 `TODO.md`，推送到远程仓库

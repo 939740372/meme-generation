@@ -35,7 +35,7 @@
 - [x] 增加端到端冒烟验证用例
 - [x] 确定跨平台 FFmpeg sidecar 的版本、构建来源与许可证分发策略（详见 docs/features/ffmpeg-sidecar-packaging/）
 - [x] 引入包含 libfreetype (drawtext) 的 FFmpeg sidecar 自动化准备脚本及文字渲染验证
-- [ ] 三平台安装包（DMG/MSI/AppImage）分发与自动更新验收
+- [x] macOS DMG 桌面安装包构建与分发验收（自包含 sidecar、免配置运行、产物体积 62.7MB，详见 docs/features/desktop-packaging/）
 
 ### P2：创作工作区
 

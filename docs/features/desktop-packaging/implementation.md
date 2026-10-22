@@ -1,6 +1,6 @@
 # 实现计划与自测：macOS DMG 桌面安装包构建与分发验收
 
-- 状态：ready-to-merge
+- 状态：merged
 - Feature slug: desktop-packaging
 - 分支：feature/desktop-packaging
 - 负责人：Antigravity
