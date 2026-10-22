@@ -420,6 +420,11 @@ const textLayers = ref<CanvasTextLayer[]>([
     boxColor: "#000000",
     boxOpacity: 0.60,
     visible: true,
+    rotation: 0,
+    arcRadius: 0,
+    isItalic: false,
+    shadowOffset: 0,
+    shadowColor: "#000000",
   },
 ]);
 const activeLayerId = ref<string>("layer-1");
@@ -448,6 +453,11 @@ function addTextLayer(): void {
     boxColor: "#000000",
     boxOpacity: 0.60,
     visible: true,
+    rotation: 0,
+    arcRadius: 0,
+    isItalic: false,
+    shadowOffset: 0,
+    shadowColor: "#000000",
   };
   textLayers.value.push(newLayer);
   activeLayerId.value = id;
@@ -508,6 +518,30 @@ const textBoxOpacity = computed({
   get: () => activeLayer.value?.boxOpacity ?? 0.6,
   set: (v: number) => { if (activeLayer.value) activeLayer.value.boxOpacity = v; },
 });
+const textRotation = computed({
+  get: () => activeLayer.value?.rotation ?? 0,
+  set: (v: number) => { if (activeLayer.value) activeLayer.value.rotation = v; },
+});
+const textArcRadius = computed({
+  get: () => activeLayer.value?.arcRadius ?? 0,
+  set: (v: number) => { if (activeLayer.value) activeLayer.value.arcRadius = v; },
+});
+const textIsItalic = computed({
+  get: () => activeLayer.value?.isItalic ?? false,
+  set: (v: boolean) => { if (activeLayer.value) activeLayer.value.isItalic = v; },
+});
+const textShadowOffset = computed({
+  get: () => activeLayer.value?.shadowOffset ?? 0,
+  set: (v: number) => { if (activeLayer.value) activeLayer.value.shadowOffset = v; },
+});
+const textShadowColor = computed({
+  get: () => activeLayer.value?.shadowColor ?? "#000000",
+  set: (v: string) => { if (activeLayer.value) activeLayer.value.shadowColor = v; },
+});
+
+function setRotationPreset(deg: number): void {
+  textRotation.value = deg;
+}
 
 const useImage = ref(false);
 const imagePath = ref("");
@@ -618,7 +652,34 @@ function getTextLayerStyle(layer: CanvasTextLayer): Record<string, string | numb
   if (strokeW > 0) {
     styles["-webkit-text-stroke"] = `${strokeW}px ${layer.strokeColor}`;
   }
+  if (layer.shadowOffset && layer.shadowOffset > 0) {
+    const sOffset = layer.shadowOffset;
+    const sCol = layer.shadowColor || "#000000";
+    styles.textShadow = `${sOffset}px ${sOffset}px 2px ${sCol}`;
+  }
+  if (layer.isItalic) {
+    styles.fontStyle = "italic";
+  }
+  if (layer.rotation && layer.rotation !== 0) {
+    styles.transform = `rotate(${layer.rotation}deg)`;
+    styles.transformOrigin = "center center";
+  }
   return styles;
+}
+
+function getArcCharStyle(layer: CanvasTextLayer, charIdx: number, totalChars: number): Record<string, string | number | undefined> {
+  if (totalChars <= 1) return {};
+  const arc = layer.arcRadius ?? 0;
+  const t = (charIdx - (totalChars - 1) / 2) / ((totalChars - 1) / 2);
+  const maxAngle = 70 * (arc / 100);
+  const deltaTheta = t * (maxAngle / 2);
+  const dropAmplitude = (arc / 100) * 20;
+  const deltaY = dropAmplitude * (t * t);
+  return {
+    display: "inline-block",
+    transform: `translateY(${deltaY.toFixed(1)}px) rotate(${deltaTheta.toFixed(1)}deg)`,
+    transformOrigin: "center center",
+  };
 }
 
 const imageDisplayLeft = computed(() => {
@@ -1142,6 +1203,11 @@ function buildRenderPlan(): RenderPlan {
       boxColor: l.boxColor,
       boxOpacity: Number(l.boxOpacity),
       visible: true,
+      rotation: l.rotation ? Number(l.rotation) : 0,
+      arcRadius: l.arcRadius ? Number(l.arcRadius) : 0,
+      isItalic: Boolean(l.isItalic),
+      shadowOffset: l.shadowOffset ? Number(l.shadowOffset) : 0,
+      shadowColor: l.shadowColor || "#000000",
     }));
 
   return {
@@ -1330,6 +1396,11 @@ async function loadHistoryPlan(record: ExportRecord): Promise<void> {
       boxColor: l.boxColor ?? "#000000",
       boxOpacity: l.boxOpacity ?? 0.6,
       visible: l.visible ?? true,
+      rotation: l.rotation ?? 0,
+      arcRadius: l.arcRadius ?? 0,
+      isItalic: l.isItalic ?? false,
+      shadowOffset: l.shadowOffset ?? 0,
+      shadowColor: l.shadowColor ?? "#000000",
     }));
     activeLayerId.value = textLayers.value[0].id;
   } else if (p.textOverlay) {
@@ -1348,6 +1419,11 @@ async function loadHistoryPlan(record: ExportRecord): Promise<void> {
         boxColor: p.textOverlay.boxColor ?? "#000000",
         boxOpacity: p.textOverlay.boxOpacity ?? 0.6,
         visible: true,
+        rotation: p.textOverlay.rotation ?? 0,
+        arcRadius: p.textOverlay.arcRadius ?? 0,
+        isItalic: p.textOverlay.isItalic ?? false,
+        shadowOffset: p.textOverlay.shadowOffset ?? 0,
+        shadowColor: p.textOverlay.shadowColor ?? "#000000",
       },
     ];
     activeLayerId.value = "layer-1";
@@ -1989,6 +2065,11 @@ function resetWorkspace(): void {
       boxColor: "#000000",
       boxOpacity: 0.6,
       visible: true,
+      rotation: 0,
+      arcRadius: 0,
+      isItalic: false,
+      shadowOffset: 0,
+      shadowColor: "#000000",
     },
   ];
   activeLayerId.value = "layer-1";
@@ -2382,15 +2463,28 @@ onBeforeUnmount(() => {
                           'is-dragging': isDraggingText && activeLayerId === layer.id,
                           'is-active': activeLayerId === layer.id,
                           'with-box': layer.useBox,
+                          'is-italic': layer.isItalic,
                         }"
                         :style="getTextLayerStyle(layer)"
                         :title="`图层 · 点击选中并拖拽`"
                         @pointerdown="startDragText(layer, $event)"
                       >
                         <span v-if="isDraggingText && activeLayerId === layer.id" class="drag-handle-pill">
-                          X: {{ layer.x }} Y: {{ layer.y }}
+                          X: {{ layer.x }} Y: {{ layer.y }}{{ layer.rotation ? ` · ${layer.rotation}°` : '' }}
                         </span>
-                        {{ layer.text }}
+                        <template v-if="layer.arcRadius && layer.arcRadius !== 0">
+                          <span
+                            v-for="(char, charIdx) in layer.text.split('')"
+                            :key="charIdx"
+                            class="arc-char-span"
+                            :style="getArcCharStyle(layer, charIdx, layer.text.length)"
+                          >
+                            {{ char }}
+                          </span>
+                        </template>
+                        <template v-else>
+                          {{ layer.text }}
+                        </template>
                       </div>
                     </template>
                   </template>
@@ -2723,6 +2817,151 @@ onBeforeUnmount(() => {
                   <span class="opacity-label">底框不透明度</span>
                   <input v-model.number="textBoxOpacity" type="range" min="0.1" max="1.0" step="0.05" class="opacity-slider" />
                   <span class="opacity-value">{{ Math.round(textBoxOpacity * 100) }}%</span>
+                </div>
+                <!-- 高级文字排版效果 (advanced-text-effects) -->
+                <div class="advanced-effects-panel">
+                  <!-- 旋转角度 -->
+                  <div class="effect-control-row">
+                    <div class="effect-label-row">
+                      <span class="effect-title">自由旋转</span>
+                      <span class="effect-value">{{ textRotation }}°</span>
+                    </div>
+                    <div class="rotation-slider-bar">
+                      <input
+                        v-model.number="textRotation"
+                        type="range"
+                        min="-180"
+                        max="180"
+                        step="1"
+                        class="effect-range-slider"
+                      />
+                      <div class="rotation-preset-pills">
+                        <button
+                          type="button"
+                          class="rot-pill"
+                          :class="{ active: textRotation === 0 }"
+                          title="重置为水平 0°"
+                          @click="setRotationPreset(0)"
+                        >
+                          0°
+                        </button>
+                        <button
+                          type="button"
+                          class="rot-pill"
+                          :class="{ active: textRotation === -45 }"
+                          title="-45°"
+                          @click="setRotationPreset(-45)"
+                        >
+                          -45°
+                        </button>
+                        <button
+                          type="button"
+                          class="rot-pill"
+                          :class="{ active: textRotation === -15 }"
+                          title="-15°"
+                          @click="setRotationPreset(-15)"
+                        >
+                          -15°
+                        </button>
+                        <button
+                          type="button"
+                          class="rot-pill"
+                          :class="{ active: textRotation === 15 }"
+                          title="+15°"
+                          @click="setRotationPreset(15)"
+                        >
+                          +15°
+                        </button>
+                        <button
+                          type="button"
+                          class="rot-pill"
+                          :class="{ active: textRotation === 45 }"
+                          title="+45°"
+                          @click="setRotationPreset(45)"
+                        >
+                          +45°
+                        </button>
+                        <button
+                          type="button"
+                          class="rot-pill"
+                          :class="{ active: textRotation === 90 }"
+                          title="90° 垂直"
+                          @click="setRotationPreset(90)"
+                        >
+                          90°
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- 弧形弯曲与斜体/立体阴影 -->
+                  <div class="advanced-style-grid">
+                    <!-- 弧形弯曲 -->
+                    <div class="effect-control-col">
+                      <div class="effect-label-row">
+                        <span class="effect-title">弧形弯曲</span>
+                        <span class="effect-value">
+                          {{ textArcRadius === 0 ? "平直 —" : textArcRadius > 0 ? `向上拱 ${textArcRadius}` : `向下凹 ${textArcRadius}` }}
+                        </span>
+                      </div>
+                      <div class="arc-slider-wrap">
+                        <input
+                          v-model.number="textArcRadius"
+                          type="range"
+                          min="-100"
+                          max="100"
+                          step="5"
+                          class="effect-range-slider"
+                          title="双击归零"
+                          @dblclick="textArcRadius = 0"
+                        />
+                        <button
+                          v-if="textArcRadius !== 0"
+                          type="button"
+                          class="mini-reset-btn"
+                          title="归零平直"
+                          @click="textArcRadius = 0"
+                        >
+                          重置
+                        </button>
+                      </div>
+                    </div>
+
+                    <!-- 动感斜体与立体阴影 -->
+                    <div class="effect-control-col">
+                      <div class="effect-label-row">
+                        <span class="effect-title">斜体与立体阴影</span>
+                      </div>
+                      <div class="style-toggle-buttons">
+                        <button
+                          type="button"
+                          class="italic-toggle-btn"
+                          :class="{ 'is-active': textIsItalic }"
+                          title="切换 12° 动感斜体排版"
+                          @click="textIsItalic = !textIsItalic"
+                        >
+                          <span class="italic-glyph">𝐼</span> 斜体
+                        </button>
+                        <div class="shadow-controls-inline">
+                          <label class="field color-field shadow-color-field" title="阴影颜色">
+                            <input v-model="textShadowColor" type="color" />
+                          </label>
+                          <label class="shadow-offset-label" title="立体阴影偏移距离">
+                            <input
+                              v-model.number="textShadowOffset"
+                              type="number"
+                              min="0"
+                              max="20"
+                              step="1"
+                              class="shadow-offset-input"
+                              placeholder="0"
+                            />
+                            <small>px</small>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
               <div class="toggle-row image-row">

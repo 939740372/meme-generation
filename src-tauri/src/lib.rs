@@ -97,7 +97,7 @@ struct CropArea {
     height: u32,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct TextOverlay {
     #[allow(dead_code)]
@@ -115,6 +115,19 @@ struct TextOverlay {
     box_opacity: Option<f64>,
     #[serde(default)]
     visible: Option<bool>,
+    pub rotation: Option<i32>,
+    pub arc_radius: Option<i32>,
+    pub is_italic: Option<bool>,
+    pub shadow_offset: Option<u32>,
+    pub shadow_color: Option<String>,
+}
+
+impl TextOverlay {
+    pub fn has_advanced_transform(&self) -> bool {
+        self.rotation.unwrap_or(0) != 0
+            || self.is_italic.unwrap_or(false)
+            || self.arc_radius.unwrap_or(0) != 0
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -586,6 +599,26 @@ fn validate_render_plan(plan: &RenderPlan, media: &MediaInfo) -> CommandResult<(
                 return Err(app_error("INVALID_TEXT_STYLE", "文字底框颜色格式无效。"));
             }
         }
+        if let Some(rot) = text.rotation {
+            if !(-360..=360).contains(&rot) {
+                return Err(app_error("INVALID_TEXT_STYLE", "文字旋转角度必须在 -360° 到 360° 之间。"));
+            }
+        }
+        if let Some(arc) = text.arc_radius {
+            if !(-100..=100).contains(&arc) {
+                return Err(app_error("INVALID_TEXT_STYLE", "文字弧度必须在 -100 到 100 之间。"));
+            }
+        }
+        if let Some(shadow_off) = text.shadow_offset {
+            if shadow_off > 100 {
+                return Err(app_error("INVALID_TEXT_STYLE", "文字阴影偏移不能超过 100。"));
+            }
+        }
+        if let Some(shadow_c) = &text.shadow_color {
+            if !is_hex_color(shadow_c) {
+                return Err(app_error("INVALID_TEXT_STYLE", "文字阴影颜色格式无效。"));
+            }
+        }
     }
 
     if let Some(image) = &plan.image_overlay {
@@ -685,106 +718,469 @@ fn map_video_filter(key: &str) -> Option<&'static str> {
 }
 
 fn build_filter_graph(plan: &RenderPlan) -> String {
-    let mut source = String::new();
-    if let Some(crop) = &plan.crop {
-        source.push_str(&format!("crop={}:{}:{}:{},", crop.width, crop.height, crop.x, crop.y));
-    }
-    let scale_h = if plan.is_mp4() { -2 } else { -1 };
-    source.push_str(&format!(
-        "scale={}:{}:flags=lanczos",
-        plan.output_width, scale_h
-    ));
-    source.push_str(&format!(",fps={}", plan.fps));
+    let active_layers = plan.active_text_layers();
+    let has_advanced = active_layers.iter().any(|l| l.has_advanced_transform());
 
-    if let Some(filter_key) = &plan.video_filter {
-        if let Some(expr) = map_video_filter(filter_key) {
-            source.push_str(&format!(",{}", expr));
+    if !has_advanced {
+        let mut source = String::new();
+        if let Some(crop) = &plan.crop {
+            source.push_str(&format!("crop={}:{}:{}:{},", crop.width, crop.height, crop.x, crop.y));
         }
-    }
+        let scale_h = if plan.is_mp4() { -2 } else { -1 };
+        source.push_str(&format!(
+            "scale={}:{}:flags=lanczos",
+            plan.output_width, scale_h
+        ));
+        source.push_str(&format!(",fps={}", plan.fps));
 
-    let fontfile_opt = detect_system_font();
-    for text in plan.active_text_layers() {
-        let mut drawtext_parts = Vec::new();
-        if let Some(fontfile) = &fontfile_opt {
-            drawtext_parts.push(format!("fontfile='{}'", escape_drawtext(fontfile)));
-        }
-        drawtext_parts.push(format!("text='{}'", escape_drawtext(&text.text)));
-        drawtext_parts.push(format!("fontcolor={}", color_for_filter(&text.color)));
-        drawtext_parts.push(format!("fontsize={}", text.size));
-        drawtext_parts.push(format!("x={}", text.x));
-        drawtext_parts.push(format!("y={}", text.y));
-
-        let stroke_w = text.stroke_width.unwrap_or(0);
-        if stroke_w > 0 {
-            let stroke_c = text.stroke_color.as_deref().unwrap_or("#000000");
-            drawtext_parts.push(format!("borderw={}", stroke_w));
-            drawtext_parts.push(format!("bordercolor={}", color_for_filter(stroke_c)));
+        if let Some(filter_key) = &plan.video_filter {
+            if let Some(expr) = map_video_filter(filter_key) {
+                source.push_str(&format!(",{}", expr));
+            }
         }
 
-        if text.use_box.unwrap_or(false) {
-            let box_c = text.box_color.as_deref().unwrap_or("#000000");
-            let box_op = text.box_opacity.unwrap_or(0.60);
-            drawtext_parts.push(format!(
-                "box=1:boxcolor={}@{:.2}:boxborderw=8",
-                color_for_filter(box_c),
-                box_op
+        let fontfile_opt = detect_system_font();
+        for text in &active_layers {
+            let mut drawtext_parts = Vec::new();
+            if let Some(fontfile) = &fontfile_opt {
+                drawtext_parts.push(format!("fontfile='{}'", escape_drawtext(fontfile)));
+            }
+            drawtext_parts.push(format!("text='{}'", escape_drawtext(&text.text)));
+            drawtext_parts.push(format!("fontcolor={}", color_for_filter(&text.color)));
+            drawtext_parts.push(format!("fontsize={}", text.size));
+            drawtext_parts.push(format!("x={}", text.x));
+            drawtext_parts.push(format!("y={}", text.y));
+
+            let stroke_w = text.stroke_width.unwrap_or(0);
+            if stroke_w > 0 {
+                let stroke_c = text.stroke_color.as_deref().unwrap_or("#000000");
+                drawtext_parts.push(format!("borderw={}", stroke_w));
+                drawtext_parts.push(format!("bordercolor={}", color_for_filter(stroke_c)));
+            }
+
+            if text.use_box.unwrap_or(false) {
+                let box_c = text.box_color.as_deref().unwrap_or("#000000");
+                let box_op = text.box_opacity.unwrap_or(0.60);
+                drawtext_parts.push(format!(
+                    "box=1:boxcolor={}@{:.2}:boxborderw=8",
+                    color_for_filter(box_c),
+                    box_op
+                ));
+            } else {
+                drawtext_parts.push("box=0".to_string());
+            }
+
+            if let Some(offset) = text.shadow_offset {
+                if offset > 0 {
+                    let shadow_c = text.shadow_color.as_deref().unwrap_or("#000000");
+                    drawtext_parts.push(format!(
+                        "shadowx={}:shadowy={}:shadowcolor={}",
+                        offset,
+                        offset,
+                        color_for_filter(shadow_c)
+                    ));
+                }
+            }
+
+            source.push_str(&format!(",drawtext={}", drawtext_parts.join(":")));
+        }
+
+        if plan.is_webp() {
+            if let Some(image) = &plan.image_overlay {
+                format!(
+                    "[0:v]{}[base];[1:v]scale={}:{}:flags=lanczos[sticker];[base][sticker]overlay={}:{}:eof_action=pass[vout]",
+                    source, image.width, -1, image.x, image.y
+                )
+            } else {
+                format!("[0:v]{}[vout]", source)
+            }
+        } else if plan.is_avif() {
+            if let Some(image) = &plan.image_overlay {
+                format!(
+                    "[0:v]{}[base];[1:v]scale={}:{}:flags=lanczos[sticker];[base][sticker]overlay={}:{}:eof_action=pass,format=yuv420p[vout]",
+                    source, image.width, -1, image.x, image.y
+                )
+            } else {
+                format!("[0:v]{},format=yuv420p[vout]", source)
+            }
+        } else if plan.is_mp4() {
+            if let Some(image) = &plan.image_overlay {
+                format!(
+                    "[0:v]{}[base];[1:v]scale={}:{}:flags=lanczos[sticker];[base][sticker]overlay={}:{}:eof_action=pass,format=yuv420p[vout]",
+                    source, image.width, -1, image.x, image.y
+                )
+            } else {
+                format!("[0:v]{},format=yuv420p[vout]", source)
+            }
+        } else {
+            let mut graph = format!("[0:v]{}[base]", source);
+            let final_label = if let Some(image) = &plan.image_overlay {
+                graph.push_str(&format!(
+                    ";[1:v]scale={}:{}:flags=lanczos[sticker];[base][sticker]overlay={}:{}:eof_action=pass[composed]",
+                    image.width, -1, image.x, image.y
+                ));
+                "[composed]"
+            } else {
+                "[base]"
+            };
+            let dither = match plan.quality.as_deref() {
+                Some("low") => "bayer:bayer_scale=3",
+                Some("high") => "sierra2_4a",
+                Some("none") => "none",
+                _ => "sierra2_4a",
+            };
+            graph.push_str(&format!(
+                ";{}split[gif][palette];[palette]palettegen=stats_mode=diff[p];[gif][p]paletteuse=dither={}[vout]",
+                final_label, dither
             ));
-        } else {
-            drawtext_parts.push("box=0".to_string());
-        }
-
-        source.push_str(&format!(",drawtext={}", drawtext_parts.join(":")));
-    }
-
-    if plan.is_webp() {
-        if let Some(image) = &plan.image_overlay {
-            format!(
-                "[0:v]{}[base];[1:v]scale={}:{}:flags=lanczos[sticker];[base][sticker]overlay={}:{}:eof_action=pass[vout]",
-                source, image.width, -1, image.x, image.y
-            )
-        } else {
-            format!("[0:v]{}[vout]", source)
-        }
-    } else if plan.is_avif() {
-        if let Some(image) = &plan.image_overlay {
-            format!(
-                "[0:v]{}[base];[1:v]scale={}:{}:flags=lanczos[sticker];[base][sticker]overlay={}:{}:eof_action=pass,format=yuv420p[vout]",
-                source, image.width, -1, image.x, image.y
-            )
-        } else {
-            format!("[0:v]{},format=yuv420p[vout]", source)
-        }
-    } else if plan.is_mp4() {
-        if let Some(image) = &plan.image_overlay {
-            format!(
-                "[0:v]{}[base];[1:v]scale={}:{}:flags=lanczos[sticker];[base][sticker]overlay={}:{}:eof_action=pass,format=yuv420p[vout]",
-                source, image.width, -1, image.x, image.y
-            )
-        } else {
-            format!("[0:v]{},format=yuv420p[vout]", source)
+            graph
         }
     } else {
-        let mut graph = format!("[0:v]{}[base]", source);
-        let final_label = if let Some(image) = &plan.image_overlay {
-            graph.push_str(&format!(
-                ";[1:v]scale={}:{}:flags=lanczos[sticker];[base][sticker]overlay={}:{}:eof_action=pass[composed]",
-                image.width, -1, image.x, image.y
-            ));
-            "[composed]"
-        } else {
-            "[base]"
-        };
-        let dither = match plan.quality.as_deref() {
-            Some("low") => "bayer:bayer_scale=3",
-            Some("high") => "sierra2_4a",
-            Some("none") => "none",
-            _ => "sierra2_4a",
-        };
-        graph.push_str(&format!(
-            ";{}split[gif][palette];[palette]palettegen=stats_mode=diff[p];[gif][p]paletteuse=dither={}[vout]",
-            final_label, dither
+        // Advanced text pipeline (rotation, shear, arc curvature)
+        let mut graph_parts: Vec<String> = Vec::new();
+        let mut base_source = String::new();
+        if let Some(crop) = &plan.crop {
+            base_source.push_str(&format!("crop={}:{}:{}:{},", crop.width, crop.height, crop.x, crop.y));
+        }
+        let scale_h = if plan.is_mp4() { -2 } else { -1 };
+        base_source.push_str(&format!(
+            "scale={}:{}:flags=lanczos",
+            plan.output_width, scale_h
         ));
-        graph
+        base_source.push_str(&format!(",fps={}", plan.fps));
+
+        if let Some(filter_key) = &plan.video_filter {
+            if let Some(expr) = map_video_filter(filter_key) {
+                base_source.push_str(&format!(",{}", expr));
+            }
+        }
+
+        graph_parts.push(format!("[0:v]{}[v0]", base_source));
+        let mut current_stream = "[v0]".to_string();
+        let fontfile_opt = detect_system_font();
+        let duration = (plan.end_secs - plan.start_secs).max(0.1);
+
+        for (layer_idx, text) in active_layers.iter().enumerate() {
+            if !text.has_advanced_transform() {
+                let next_stream = format!("[v_{}]", layer_idx + 1);
+                let mut drawtext_parts = Vec::new();
+                if let Some(fontfile) = &fontfile_opt {
+                    drawtext_parts.push(format!("fontfile='{}'", escape_drawtext(fontfile)));
+                }
+                drawtext_parts.push(format!("text='{}'", escape_drawtext(&text.text)));
+                drawtext_parts.push(format!("fontcolor={}", color_for_filter(&text.color)));
+                drawtext_parts.push(format!("fontsize={}", text.size));
+                drawtext_parts.push(format!("x={}", text.x));
+                drawtext_parts.push(format!("y={}", text.y));
+
+                let stroke_w = text.stroke_width.unwrap_or(0);
+                if stroke_w > 0 {
+                    let stroke_c = text.stroke_color.as_deref().unwrap_or("#000000");
+                    drawtext_parts.push(format!("borderw={}", stroke_w));
+                    drawtext_parts.push(format!("bordercolor={}", color_for_filter(stroke_c)));
+                }
+
+                if text.use_box.unwrap_or(false) {
+                    let box_c = text.box_color.as_deref().unwrap_or("#000000");
+                    let box_op = text.box_opacity.unwrap_or(0.60);
+                    drawtext_parts.push(format!(
+                        "box=1:boxcolor={}@{:.2}:boxborderw=8",
+                        color_for_filter(box_c),
+                        box_op
+                    ));
+                } else {
+                    drawtext_parts.push("box=0".to_string());
+                }
+
+                if let Some(offset) = text.shadow_offset {
+                    if offset > 0 {
+                        let shadow_c = text.shadow_color.as_deref().unwrap_or("#000000");
+                        drawtext_parts.push(format!(
+                            "shadowx={}:shadowy={}:shadowcolor={}",
+                            offset,
+                            offset,
+                            color_for_filter(shadow_c)
+                        ));
+                    }
+                }
+
+                graph_parts.push(format!(
+                    "{}drawtext={}{}",
+                    current_stream,
+                    drawtext_parts.join(":"),
+                    next_stream
+                ));
+                current_stream = next_stream;
+            } else if text.arc_radius.unwrap_or(0) == 0 {
+                // Rotated and/or sheared single layer
+                let est_w = (text.text.chars().map(|c| if c.is_ascii() { 0.6 } else { 1.0 }).sum::<f64>() * text.size as f64).round() as u32;
+                let est_h = text.size;
+                let pad_w = (est_w * 2 + 120).max(200);
+                let pad_h = (est_h * 3 + 120).max(120);
+
+                let mut drawtext_parts = Vec::new();
+                if let Some(fontfile) = &fontfile_opt {
+                    drawtext_parts.push(format!("fontfile='{}'", escape_drawtext(fontfile)));
+                }
+                drawtext_parts.push(format!("text='{}'", escape_drawtext(&text.text)));
+                drawtext_parts.push(format!("fontcolor={}", color_for_filter(&text.color)));
+                drawtext_parts.push(format!("fontsize={}", text.size));
+                drawtext_parts.push("x=(w-text_w)/2".to_string());
+                drawtext_parts.push("y=(h-text_h)/2".to_string());
+
+                let stroke_w = text.stroke_width.unwrap_or(0);
+                if stroke_w > 0 {
+                    let stroke_c = text.stroke_color.as_deref().unwrap_or("#000000");
+                    drawtext_parts.push(format!("borderw={}", stroke_w));
+                    drawtext_parts.push(format!("bordercolor={}", color_for_filter(stroke_c)));
+                }
+
+                if text.use_box.unwrap_or(false) {
+                    let box_c = text.box_color.as_deref().unwrap_or("#000000");
+                    let box_op = text.box_opacity.unwrap_or(0.60);
+                    drawtext_parts.push(format!(
+                        "box=1:boxcolor={}@{:.2}:boxborderw=8",
+                        color_for_filter(box_c),
+                        box_op
+                    ));
+                } else {
+                    drawtext_parts.push("box=0".to_string());
+                }
+
+                if let Some(offset) = text.shadow_offset {
+                    if offset > 0 {
+                        let shadow_c = text.shadow_color.as_deref().unwrap_or("#000000");
+                        drawtext_parts.push(format!(
+                            "shadowx={}:shadowy={}:shadowcolor={}",
+                            offset,
+                            offset,
+                            color_for_filter(shadow_c)
+                        ));
+                    }
+                }
+
+                let mut pad_chain = format!(
+                    "color=c=black@0.0:s={}x{}:d={:.2},format=rgba,drawtext={}",
+                    pad_w, pad_h, duration, drawtext_parts.join(":")
+                );
+
+                if text.is_italic.unwrap_or(false) {
+                    pad_chain.push_str(",shear=shx=-0.22:c=none");
+                }
+
+                let rot = text.rotation.unwrap_or(0);
+                if rot != 0 {
+                    pad_chain.push_str(&format!(
+                        ",rotate={}*PI/180:c=none:ow=rotw({}*PI/180):oh=roth({}*PI/180)",
+                        rot, rot, rot
+                    ));
+                }
+
+                let pad_label = format!("[t_{}]", layer_idx + 1);
+                let next_stream = format!("[v_{}]", layer_idx + 1);
+                graph_parts.push(format!("{}{}", pad_chain, pad_label));
+
+                let cx = text.x as f64 + est_w as f64 / 2.0;
+                let cy = text.y as f64 + est_h as f64 / 2.0;
+                graph_parts.push(format!(
+                    "{}{}overlay={:.0}-w/2:{:.0}-h/2:eof_action=pass{}",
+                    current_stream, pad_label, cx, cy, next_stream
+                ));
+                current_stream = next_stream;
+            } else {
+                // Arc curvature layer
+                let arc = text.arc_radius.unwrap_or(0);
+                let chars: Vec<char> = text.text.chars().collect();
+                let n = chars.len();
+                let est_w = (text.text.chars().map(|c| if c.is_ascii() { 0.6 } else { 1.0 }).sum::<f64>() * text.size as f64).round() as u32;
+                let est_h = text.size;
+                let cx_base = text.x as f64 + est_w as f64 / 2.0;
+                let cy_base = text.y as f64 + est_h as f64 / 2.0;
+
+                if n <= 1 {
+                    // Single char: render rotated
+                    let pad_w = (est_w * 2 + 120).max(200);
+                    let pad_h = (est_h * 3 + 120).max(120);
+
+                    let mut drawtext_parts = Vec::new();
+                    if let Some(fontfile) = &fontfile_opt {
+                        drawtext_parts.push(format!("fontfile='{}'", escape_drawtext(fontfile)));
+                    }
+                    drawtext_parts.push(format!("text='{}'", escape_drawtext(&text.text)));
+                    drawtext_parts.push(format!("fontcolor={}", color_for_filter(&text.color)));
+                    drawtext_parts.push(format!("fontsize={}", text.size));
+                    drawtext_parts.push("x=(w-text_w)/2".to_string());
+                    drawtext_parts.push("y=(h-text_h)/2".to_string());
+
+                    let stroke_w = text.stroke_width.unwrap_or(0);
+                    if stroke_w > 0 {
+                        let stroke_c = text.stroke_color.as_deref().unwrap_or("#000000");
+                        drawtext_parts.push(format!("borderw={}", stroke_w));
+                        drawtext_parts.push(format!("bordercolor={}", color_for_filter(stroke_c)));
+                    }
+
+                    if text.use_box.unwrap_or(false) {
+                        let box_c = text.box_color.as_deref().unwrap_or("#000000");
+                        let box_op = text.box_opacity.unwrap_or(0.60);
+                        drawtext_parts.push(format!(
+                            "box=1:boxcolor={}@{:.2}:boxborderw=8",
+                            color_for_filter(box_c),
+                            box_op
+                        ));
+                    } else {
+                        drawtext_parts.push("box=0".to_string());
+                    }
+
+                    if let Some(offset) = text.shadow_offset {
+                        if offset > 0 {
+                            let shadow_c = text.shadow_color.as_deref().unwrap_or("#000000");
+                            drawtext_parts.push(format!(
+                                "shadowx={}:shadowy={}:shadowcolor={}",
+                                offset,
+                                offset,
+                                color_for_filter(shadow_c)
+                            ));
+                        }
+                    }
+
+                    let mut pad_chain = format!(
+                        "color=c=black@0.0:s={}x{}:d={:.2},format=rgba,drawtext={}",
+                        pad_w, pad_h, duration, drawtext_parts.join(":")
+                    );
+
+                    if text.is_italic.unwrap_or(false) {
+                        pad_chain.push_str(",shear=shx=-0.22:c=none");
+                    }
+
+                    let rot = text.rotation.unwrap_or(0);
+                    if rot != 0 {
+                        pad_chain.push_str(&format!(
+                            ",rotate={}*PI/180:c=none:ow=rotw({}*PI/180):oh=roth({}*PI/180)",
+                            rot, rot, rot
+                        ));
+                    }
+
+                    let pad_label = format!("[t_{}]", layer_idx + 1);
+                    let next_stream = format!("[v_{}]", layer_idx + 1);
+                    graph_parts.push(format!("{}{}", pad_chain, pad_label));
+                    graph_parts.push(format!(
+                        "{}{}overlay={:.0}-w/2:{:.0}-h/2:eof_action=pass{}",
+                        current_stream, pad_label, cx_base, cy_base, next_stream
+                    ));
+                    current_stream = next_stream;
+                } else {
+                    let char_pad_size = (text.size * 2 + 40).max(64);
+                    let max_angle_span = 70.0 * (arc as f64 / 100.0);
+                    let arc_amplitude = (arc as f64 / 100.0) * 0.22 * est_w as f64;
+
+                    for (char_idx, &ch) in chars.iter().enumerate() {
+                        if ch.is_whitespace() {
+                            continue;
+                        }
+                        let t_k = (char_idx as f64 - (n - 1) as f64 / 2.0) / ((n - 1) as f64 / 2.0);
+                        let delta_theta = t_k * (max_angle_span / 2.0);
+                        let total_rot = text.rotation.unwrap_or(0) as f64 + delta_theta;
+                        let delta_x = t_k * (est_w as f64 / 2.0) * (delta_theta * std::f64::consts::PI / 180.0).cos();
+                        let delta_y = arc_amplitude * t_k * t_k;
+                        let char_cx = cx_base + delta_x;
+                        let char_cy = cy_base + delta_y;
+
+                        let mut drawtext_parts = Vec::new();
+                        if let Some(fontfile) = &fontfile_opt {
+                            drawtext_parts.push(format!("fontfile='{}'", escape_drawtext(fontfile)));
+                        }
+                        drawtext_parts.push(format!("text='{}'", escape_drawtext(&ch.to_string())));
+                        drawtext_parts.push(format!("fontcolor={}", color_for_filter(&text.color)));
+                        drawtext_parts.push(format!("fontsize={}", text.size));
+                        drawtext_parts.push("x=(w-text_w)/2".to_string());
+                        drawtext_parts.push("y=(h-text_h)/2".to_string());
+
+                        let stroke_w = text.stroke_width.unwrap_or(0);
+                        if stroke_w > 0 {
+                            let stroke_c = text.stroke_color.as_deref().unwrap_or("#000000");
+                            drawtext_parts.push(format!("borderw={}", stroke_w));
+                            drawtext_parts.push(format!("bordercolor={}", color_for_filter(stroke_c)));
+                        }
+
+                        if text.use_box.unwrap_or(false) {
+                            let box_c = text.box_color.as_deref().unwrap_or("#000000");
+                            let box_op = text.box_opacity.unwrap_or(0.60);
+                            drawtext_parts.push(format!(
+                                "box=1:boxcolor={}@{:.2}:boxborderw=8",
+                                color_for_filter(box_c),
+                                box_op
+                            ));
+                        } else {
+                            drawtext_parts.push("box=0".to_string());
+                        }
+
+                        if let Some(offset) = text.shadow_offset {
+                            if offset > 0 {
+                                let shadow_c = text.shadow_color.as_deref().unwrap_or("#000000");
+                                drawtext_parts.push(format!(
+                                    "shadowx={}:shadowy={}:shadowcolor={}",
+                                    offset,
+                                    offset,
+                                    color_for_filter(shadow_c)
+                                ));
+                            }
+                        }
+
+                        let mut pad_chain = format!(
+                            "color=c=black@0.0:s={}x{}:d={:.2},format=rgba,drawtext={}",
+                            char_pad_size, char_pad_size, duration, drawtext_parts.join(":")
+                        );
+
+                        if text.is_italic.unwrap_or(false) {
+                            pad_chain.push_str(",shear=shx=-0.22:c=none");
+                        }
+
+                        if total_rot.abs() > 0.1 {
+                            pad_chain.push_str(&format!(
+                                ",rotate={:.1}*PI/180:c=none:ow=rotw({:.1}*PI/180):oh=roth({:.1}*PI/180)",
+                                total_rot, total_rot, total_rot
+                            ));
+                        }
+
+                        let pad_label = format!("[tc_{}_{}]", layer_idx + 1, char_idx);
+                        let next_stream = format!("[v_{}_{}]", layer_idx + 1, char_idx);
+                        graph_parts.push(format!("{}{}", pad_chain, pad_label));
+                        graph_parts.push(format!(
+                            "{}{}overlay={:.0}-w/2:{:.0}-h/2:eof_action=pass{}",
+                            current_stream, pad_label, char_cx, char_cy, next_stream
+                        ));
+                        current_stream = next_stream;
+                    }
+                }
+            }
+        }
+
+        if let Some(image) = &plan.image_overlay {
+            graph_parts.push(format!(
+                "[1:v]scale={}:{}:flags=lanczos[sticker];{}[sticker]overlay={}:{}:eof_action=pass[composed]",
+                image.width, -1, current_stream, image.x, image.y
+            ));
+            current_stream = "[composed]".to_string();
+        }
+
+        if plan.is_webp() {
+            graph_parts.push(format!("{}[vout]", current_stream));
+        } else if plan.is_avif() || plan.is_mp4() {
+            graph_parts.push(format!("{}format=yuv420p[vout]", current_stream));
+        } else {
+            let dither = match plan.quality.as_deref() {
+                Some("low") => "bayer:bayer_scale=3",
+                Some("high") => "sierra2_4a",
+                Some("none") => "none",
+                _ => "sierra2_4a",
+            };
+            graph_parts.push(format!(
+                "{}split[gif][palette];[palette]palettegen=stats_mode=diff[p];[gif][p]paletteuse=dither={}[vout]",
+                current_stream, dither
+            ));
+        }
+
+        graph_parts.join(";")
     }
 }
 
@@ -1724,6 +2120,7 @@ mod tests {
                 box_color: Some("#111111".to_string()),
                 box_opacity: Some(0.65),
                 visible: Some(true),
+                ..Default::default()
             }),
             text_layers: None,
             image_overlay: None,
@@ -1763,6 +2160,7 @@ mod tests {
                 box_color: None,
                 box_opacity: None,
                 visible: Some(true),
+                ..Default::default()
             }),
             text_layers: None,
             image_overlay: None,
@@ -1800,6 +2198,7 @@ mod tests {
                     box_color: Some("#000000".to_string()),
                     box_opacity: Some(0.5),
                     visible: Some(true),
+                    ..Default::default()
                 },
                 TextOverlay {
                     id: Some("layer-hidden".to_string()),
@@ -1824,6 +2223,7 @@ mod tests {
                     box_color: None,
                     box_opacity: None,
                     visible: Some(true),
+                    ..Default::default()
                 },
             ]),
             image_overlay: None,
@@ -2380,5 +2780,147 @@ mod tests {
         assert!(fc.contains("[2:a]volume=1.00,atrim=0:2.000[a1]"));
         assert!(fc.contains("[0:a]volume=1.00[a0]"));
         assert!(fc.contains("amix=inputs=2:duration=first:dropout_transition=0"));
+    }
+
+    #[test]
+    fn builds_drawtext_filter_graph_with_shadow() {
+        let plan = RenderPlan {
+            input_path: "input.mp4".to_string(),
+            output_path: "output.gif".to_string(),
+            start_secs: 0.0,
+            end_secs: 1.0,
+            output_width: 320,
+            fps: 15,
+            text_overlay: Some(TextOverlay {
+                text: "阴影测试".to_string(),
+                x: 20,
+                y: 30,
+                size: 24,
+                color: "#FFFFFF".to_string(),
+                shadow_offset: Some(4),
+                shadow_color: Some("#112233".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let graph = build_filter_graph(&plan);
+        assert!(graph.contains("shadowx=4:shadowy=4:shadowcolor=0x112233"));
+    }
+
+    #[test]
+    fn builds_drawtext_filter_graph_with_rotation() {
+        let plan = RenderPlan {
+            input_path: "input.mp4".to_string(),
+            output_path: "output.gif".to_string(),
+            start_secs: 0.0,
+            end_secs: 1.0,
+            output_width: 320,
+            fps: 15,
+            text_overlay: Some(TextOverlay {
+                text: "旋转45度".to_string(),
+                x: 40,
+                y: 50,
+                size: 28,
+                color: "#FFFF00".to_string(),
+                rotation: Some(45),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let graph = build_filter_graph(&plan);
+        assert!(graph.contains("color=c=black@0.0:s="));
+        assert!(graph.contains("rotate=45*PI/180:c=none:ow=rotw(45*PI/180):oh=roth(45*PI/180)"));
+        assert!(graph.contains("overlay="));
+    }
+
+    #[test]
+    fn builds_drawtext_filter_graph_with_italic_shear() {
+        let plan = RenderPlan {
+            input_path: "input.mp4".to_string(),
+            output_path: "output.mp4".to_string(),
+            start_secs: 0.0,
+            end_secs: 1.0,
+            output_width: 320,
+            fps: 15,
+            text_overlay: Some(TextOverlay {
+                text: "斜体动感".to_string(),
+                x: 10,
+                y: 20,
+                size: 30,
+                color: "#FFFFFF".to_string(),
+                is_italic: Some(true),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let graph = build_filter_graph(&plan);
+        assert!(graph.contains("shear=shx=-0.22:c=none"));
+        assert!(graph.contains("format=yuv420p[vout]"));
+    }
+
+    #[test]
+    fn builds_drawtext_filter_graph_with_arc_curvature() {
+        let plan = RenderPlan {
+            input_path: "input.mp4".to_string(),
+            output_path: "output.gif".to_string(),
+            start_secs: 0.0,
+            end_secs: 1.0,
+            output_width: 320,
+            fps: 15,
+            text_overlay: Some(TextOverlay {
+                text: "高能预警".to_string(),
+                x: 60,
+                y: 40,
+                size: 26,
+                color: "#FF0000".to_string(),
+                arc_radius: Some(60),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let graph = build_filter_graph(&plan);
+        assert!(graph.contains("text='高'"));
+        assert!(graph.contains("text='能'"));
+        assert!(graph.contains("text='预'"));
+        assert!(graph.contains("text='警'"));
+        assert!(graph.contains("tc_1_"));
+    }
+
+    #[test]
+    fn builds_drawtext_filter_graph_combined_advanced_effects() {
+        let plan = RenderPlan {
+            input_path: "input.mp4".to_string(),
+            output_path: "output.webp".to_string(),
+            start_secs: 0.0,
+            end_secs: 1.0,
+            output_width: 320,
+            fps: 15,
+            text_overlay: Some(TextOverlay {
+                text: "全能特效".to_string(),
+                x: 30,
+                y: 30,
+                size: 32,
+                color: "#00FFCC".to_string(),
+                rotation: Some(-25),
+                is_italic: Some(true),
+                stroke_width: Some(3),
+                stroke_color: Some("#000000".to_string()),
+                shadow_offset: Some(6),
+                shadow_color: Some("#222222".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let graph = build_filter_graph(&plan);
+        assert!(graph.contains("shear=shx=-0.22:c=none"));
+        assert!(graph.contains("rotate=-25*PI/180"));
+        assert!(graph.contains("borderw=3"));
+        assert!(graph.contains("shadowx=6:shadowy=6:shadowcolor=0x222222"));
+        assert!(graph.ends_with("[vout]"));
     }
 }
