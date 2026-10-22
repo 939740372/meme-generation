@@ -1,6 +1,6 @@
 # 细化 TODO：可视化时间轴与画布拖拽创作工作区
 
-- 状态：ready-to-merge
+- 状态：merged
 - Feature slug：creative-timeline-canvas
 - 分支：feature/creative-timeline-canvas
 - 负责人：待定
@@ -33,5 +33,5 @@
 - [x] 执行 `cargo check --locked` 与 `cargo test`
 - [x] 执行真实媒体导出验证：确认拖拽位置与导出的 GIF 完全一致
 - [x] 更新 feature 文档状态为 `ready-to-merge`
-- [ ] 合并到 `main` 分支并将状态更新为 `merged`
-- [ ] 更新根目录 `TODO.md`
+- [x] 合并到 `main` 分支并将状态更新为 `merged`
+- [x] 更新根目录 `TODO.md`

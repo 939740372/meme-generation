@@ -1,6 +1,6 @@
 # 详细实现文档：可视化时间轴与画布拖拽创作工作区
 
-- 状态：ready-to-merge
+- 状态：merged
 - Feature slug：creative-timeline-canvas
 - 分支：feature/creative-timeline-canvas
 - 负责人：待定
