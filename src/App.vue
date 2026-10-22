@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import {
   cancelRender,
   copyFileToClipboard,
+  getBuiltinStickers,
   getDesktopInfo,
   isDesktopRuntime,
   listenForRenderEvents,
@@ -13,6 +14,7 @@ import {
   readFileAsDataUrl,
   renderGif,
   revealFileInDir,
+  type BuiltinSticker,
   type DesktopInfo,
   type ExportRecord,
   type MediaInfo,
@@ -53,11 +55,76 @@ const taskId = ref<string | null>(null);
 const outputBytes = ref(0);
 const stopListening = ref<(() => void) | null>(null);
 
-const drawerTab = ref<"history" | "templates">("history");
+const drawerTab = ref<"history" | "templates" | "stickers">("history");
 const customTemplates = ref<MemeTemplate[]>([]);
 const isSaveTemplateModalOpen = ref(false);
 const newTemplateName = ref("");
 const templateNameInputRef = ref<HTMLInputElement | null>(null);
+
+const builtinStickers = ref<BuiltinSticker[]>([]);
+const selectedStickerCategory = ref<"all" | "classic" | "emotion" | "bubble">("all");
+const imagePreviewUrl = ref<string>("");
+const isResizingImage = ref(false);
+
+const filteredStickers = computed(() => {
+  if (selectedStickerCategory.value === "all") {
+    return builtinStickers.value;
+  }
+  return builtinStickers.value.filter((s) => s.category === selectedStickerCategory.value);
+});
+
+const classicStickersCount = computed(
+  () => builtinStickers.value.filter((s) => s.category === "classic").length
+);
+const emotionStickersCount = computed(
+  () => builtinStickers.value.filter((s) => s.category === "emotion").length
+);
+const bubbleStickersCount = computed(
+  () => builtinStickers.value.filter((s) => s.category === "bubble").length
+);
+
+function getCategoryLabel(cat: string): string {
+  switch (cat) {
+    case "classic":
+      return "经典名梗";
+    case "emotion":
+      return "情绪表态";
+    case "bubble":
+      return "对话气泡";
+    default:
+      return "表情贴纸";
+  }
+}
+
+function openStickersDrawer(): void {
+  drawerTab.value = "stickers";
+  isDrawerOpen.value = true;
+}
+
+function applySticker(sticker: BuiltinSticker): void {
+  useImage.value = true;
+  imagePath.value = sticker.path;
+  imagePreviewUrl.value = sticker.dataUrl;
+  imageWidth.value = sticker.defaultWidth;
+  if (media.value) {
+    imageX.value = Math.max(0, Math.round((media.value.width - sticker.defaultWidth) / 2));
+    imageY.value = Math.max(0, Math.round((media.value.height - sticker.defaultWidth) / 2));
+  } else {
+    imageX.value = 50;
+    imageY.value = 50;
+  }
+  isDrawerOpen.value = false;
+  showToast(`已添加贴纸「${sticker.name}」到画面`);
+}
+
+function scaleImageTo(ratio: number): void {
+  if (!media.value) {
+    imageWidth.value = Math.round(120 * ratio);
+    return;
+  }
+  const base = Math.min(media.value.width, 160);
+  imageWidth.value = Math.max(20, Math.min(media.value.width, Math.round(base * ratio)));
+}
 
 const allTemplatesList = computed(() => [
   ...BUILTIN_TEMPLATES,
@@ -498,6 +565,31 @@ function startDragImage(event: PointerEvent): void {
   window.addEventListener("pointerup", onPointerUp);
 }
 
+function startResizeImage(event: PointerEvent): void {
+  if (!media.value || !stageRef.value) return;
+  event.preventDefault();
+  event.stopPropagation();
+  isResizingImage.value = true;
+  const startClientX = event.clientX;
+  const initWidth = imageWidth.value;
+  const scaleX = stageRef.value.clientWidth / media.value.width;
+
+  const onPointerMove = (e: PointerEvent): void => {
+    const deltaX = (e.clientX - startClientX) / scaleX;
+    const newWidth = Math.round(initWidth + deltaX);
+    imageWidth.value = Math.max(20, Math.min(media.value!.width, newWidth));
+  };
+
+  const onPointerUp = (): void => {
+    isResizingImage.value = false;
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", onPointerUp);
+  };
+
+  window.addEventListener("pointermove", onPointerMove);
+  window.addEventListener("pointerup", onPointerUp);
+}
+
 const cropDisplayLeft = computed(() => {
   if (!media.value || stageSize.width <= 0) return crop.x;
   return crop.x * (stageSize.width / media.value.width);
@@ -799,6 +891,8 @@ async function chooseImage(): Promise<void> {
       imagePath.value = selected;
       useImage.value = true;
       errorMessage.value = "";
+      imagePreviewUrl.value = (await readFileAsDataUrl(selected)) || "";
+      showToast("已载入本地 PNG 图案");
     }
   } catch (error) {
     errorMessage.value = readableError(error);
@@ -886,6 +980,7 @@ async function stopRender(): Promise<void> {
 
 function clearImage(): void {
   imagePath.value = "";
+  imagePreviewUrl.value = "";
   useImage.value = false;
 }
 
@@ -1035,8 +1130,13 @@ async function loadHistoryPlan(record: ExportRecord): Promise<void> {
     imageX.value = p.imageOverlay.x;
     imageY.value = p.imageOverlay.y;
     imageWidth.value = p.imageOverlay.width;
+    readFileAsDataUrl(p.imageOverlay.path).then((url) => {
+      if (url) imagePreviewUrl.value = url;
+    });
   } else {
     useImage.value = false;
+    imagePath.value = "";
+    imagePreviewUrl.value = "";
   }
 
   if (p.format === "webp" || record.filePath.toLowerCase().endsWith(".webp")) {
@@ -1373,6 +1473,7 @@ function resetWorkspace(): void {
   activeLayerId.value = "layer-1";
   useImage.value = false;
   imagePath.value = "";
+  imagePreviewUrl.value = "";
   status.value = "idle";
   statusMessage.value = "选择一个视频开始制作。";
   errorMessage.value = "";
@@ -1431,6 +1532,11 @@ async function restoreDraftIfAvailable(): Promise<void> {
         imageX.value = draft.imageX;
         imageY.value = draft.imageY;
         imageWidth.value = draft.imageWidth;
+        if (draft.imagePath) {
+          readFileAsDataUrl(draft.imagePath).then((url) => {
+            if (url) imagePreviewUrl.value = url;
+          });
+        }
         status.value = "ready";
         statusMessage.value = "已自动还原上次编辑草稿。";
         showToast("已自动恢复上次编辑草稿");
@@ -1519,6 +1625,7 @@ onMounted(async () => {
   try {
     loadTemplates();
     loadHistoryFromStorage();
+    builtinStickers.value = await getBuiltinStickers();
     window.addEventListener("keydown", handleKeydown);
     desktopInfo.value = await getDesktopInfo();
     await connectDesktopEvents();
@@ -1737,17 +1844,33 @@ onBeforeUnmount(() => {
                   <div
                     v-if="useImage && imagePath"
                     class="preview-sticker interactive-drag"
-                    :class="{ 'is-dragging': isDraggingImage }"
+                    :class="{ 'is-dragging': isDraggingImage, 'is-resizing': isResizingImage }"
                     :style="{
                       left: `${imageDisplayLeft}px`,
                       top: `${imageDisplayTop}px`,
                       width: `${imageDisplayWidth}px`,
                     }"
-                    title="按住鼠标拖拽贴图位置"
+                    title="按住鼠标拖拽位置，按住右下角手柄缩放尺寸"
                     @pointerdown="startDragImage"
                   >
-                    <span v-if="isDraggingImage" class="drag-handle-pill">X: {{ imageX }} Y: {{ imageY }}</span>
-                    PNG
+                    <span v-if="isDraggingImage || isResizingImage" class="drag-handle-pill">
+                      X: {{ imageX }} Y: {{ imageY }} · W: {{ imageWidth }}px
+                    </span>
+                    <img
+                      v-if="imagePreviewUrl"
+                      :src="imagePreviewUrl"
+                      class="sticker-canvas-img"
+                      alt="贴纸图案"
+                      draggable="false"
+                    />
+                    <span v-else class="sticker-fallback-text">PNG</span>
+                    <div
+                      class="sticker-resize-handle"
+                      title="按住拖拽缩放尺寸"
+                      @pointerdown.stop="startResizeImage"
+                    >
+                      ⤡
+                    </div>
                   </div>
 
                   <!-- 可视化矩形裁切框与九宫格遮罩层 -->
@@ -2026,15 +2149,31 @@ onBeforeUnmount(() => {
                 </div>
               </div>
               <div class="toggle-row image-row">
-                <label class="toggle-label"><input v-model="useImage" type="checkbox" /><span class="toggle-ui"></span><span>PNG 图案</span></label>
-                <button class="inline-button" type="button" @click="chooseImage">{{ imagePath ? "替换" : "选择 PNG" }}</button>
+                <label class="toggle-label"><input v-model="useImage" type="checkbox" /><span class="toggle-ui"></span><span>贴纸图案</span></label>
+                <div class="sticker-header-actions">
+                  <button class="inline-button sticker-lib-btn" type="button" title="从内置经典表情贴纸库选择" @click="openStickersDrawer">🎨 贴纸素材</button>
+                  <button class="inline-button" type="button" @click="chooseImage">{{ imagePath ? "更换本地" : "本地 PNG" }}</button>
+                </div>
               </div>
               <div v-if="useImage && imagePath" class="overlay-fields">
-                <div class="selected-file"><span>PNG</span><strong>{{ imagePath.split(/[\\/]/).pop() }}</strong><button type="button" aria-label="移除 PNG" @click="clearImage">×</button></div>
+                <div class="selected-file sticker-selected-chip">
+                  <img v-if="imagePreviewUrl" :src="imagePreviewUrl" class="sticker-chip-icon" alt="贴纸" />
+                  <span v-else class="sticker-chip-badge">PNG</span>
+                  <strong class="sticker-chip-filename">{{ imagePath.split(/[\\/]/).pop() }}</strong>
+                  <button type="button" aria-label="移除贴图" @click="clearImage">×</button>
+                </div>
                 <div class="field-grid three-up">
                   <label class="field"><span>X</span><input v-model.number="imageX" type="number" min="0" step="1" /></label>
                   <label class="field"><span>Y</span><input v-model.number="imageY" type="number" min="0" step="1" /></label>
-                  <label class="field"><span>Width</span><input v-model.number="imageWidth" type="number" min="1" max="1920" step="1" /></label>
+                  <label class="field"><span>宽度 (W)</span><input v-model.number="imageWidth" type="number" min="20" max="1920" step="1" /></label>
+                </div>
+                <div class="sticker-scale-presets-bar">
+                  <span class="scale-preset-label">比例缩放</span>
+                  <div class="scale-preset-buttons">
+                    <button type="button" class="scale-preset-btn" title="缩小至 60%" @click="scaleImageTo(0.6)">60%</button>
+                    <button type="button" class="scale-preset-btn" title="原始大小 100%" @click="scaleImageTo(1.0)">100%</button>
+                    <button type="button" class="scale-preset-btn" title="放大至 150%" @click="scaleImageTo(1.5)">150%</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2150,6 +2289,15 @@ onBeforeUnmount(() => {
                     <span>📑 表情包模板</span>
                     <span class="drawer-count-chip">{{ allTemplatesList.length }}</span>
                   </button>
+                  <button
+                    type="button"
+                    class="drawer-tab"
+                    :class="{ active: drawerTab === 'stickers' }"
+                    @click="drawerTab = 'stickers'"
+                  >
+                    <span>🎨 贴纸素材</span>
+                    <span class="drawer-count-chip">{{ builtinStickers.length }}</span>
+                  </button>
                 </div>
               </div>
               <div class="drawer-header-right">
@@ -2163,7 +2311,7 @@ onBeforeUnmount(() => {
                     清空历史
                   </button>
                 </template>
-                <template v-else>
+                <template v-else-if="drawerTab === 'templates'">
                   <button
                     type="button"
                     class="drawer-add-template-btn"
@@ -2172,6 +2320,9 @@ onBeforeUnmount(() => {
                   >
                     ＋ 存为我的模板
                   </button>
+                </template>
+                <template v-else-if="drawerTab === 'stickers'">
+                  <span class="drawer-stickers-tip">透明免抠图 · 点击一键置入画布</span>
                 </template>
                 <button
                   type="button"
@@ -2257,7 +2408,7 @@ onBeforeUnmount(() => {
             </div>
 
             <!-- Tab 2: 表情包排版模板列表 -->
-            <div v-else class="drawer-tab-content">
+            <div v-else-if="drawerTab === 'templates'" class="drawer-tab-content">
               <div class="drawer-cards-strip templates-strip">
                 <div
                   v-for="tpl in allTemplatesList"
@@ -2314,6 +2465,65 @@ onBeforeUnmount(() => {
                         🗑
                       </button>
                     </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tab 3: 透明表情贴纸素材库 -->
+            <div v-else-if="drawerTab === 'stickers'" class="drawer-tab-content stickers-tab-content">
+              <div class="stickers-filter-bar">
+                <div class="stickers-category-pills">
+                  <button
+                    type="button"
+                    class="category-pill-btn"
+                    :class="{ active: selectedStickerCategory === 'all' }"
+                    @click="selectedStickerCategory = 'all'"
+                  >
+                    全部 ({{ builtinStickers.length }})
+                  </button>
+                  <button
+                    type="button"
+                    class="category-pill-btn"
+                    :class="{ active: selectedStickerCategory === 'classic' }"
+                    @click="selectedStickerCategory = 'classic'"
+                  >
+                    经典名梗 ({{ classicStickersCount }})
+                  </button>
+                  <button
+                    type="button"
+                    class="category-pill-btn"
+                    :class="{ active: selectedStickerCategory === 'emotion' }"
+                    @click="selectedStickerCategory = 'emotion'"
+                  >
+                    情绪表态 ({{ emotionStickersCount }})
+                  </button>
+                  <button
+                    type="button"
+                    class="category-pill-btn"
+                    :class="{ active: selectedStickerCategory === 'bubble' }"
+                    @click="selectedStickerCategory = 'bubble'"
+                  >
+                    对话气泡 ({{ bubbleStickersCount }})
+                  </button>
+                </div>
+              </div>
+
+              <div class="drawer-cards-strip stickers-strip">
+                <div
+                  v-for="stk in filteredStickers"
+                  :key="stk.id"
+                  class="sticker-card"
+                  :class="{ 'is-active-sticker': useImage && imagePath === stk.path }"
+                  title="点击将贴纸一键置入画面中央"
+                  @click="applySticker(stk)"
+                >
+                  <div class="sticker-card-thumb-wrap checker-bg">
+                    <img :src="stk.dataUrl" :alt="stk.name" class="sticker-card-img" draggable="false" />
+                  </div>
+                  <div class="sticker-card-meta">
+                    <strong class="sticker-card-name">{{ stk.name }}</strong>
+                    <span class="sticker-card-cat">{{ getCategoryLabel(stk.category) }}</span>
                   </div>
                 </div>
               </div>
