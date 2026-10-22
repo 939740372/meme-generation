@@ -104,6 +104,37 @@ const draftSample = {
   imageX: 0,
   imageY: 0,
   imageWidth: 100,
+  textLayers: [
+    {
+      id: "layer-1",
+      text: "顶部第一句",
+      x: 10,
+      y: 20,
+      size: 24,
+      color: "#ffffff",
+      strokeWidth: 2,
+      strokeColor: "#000000",
+      useBox: false,
+      boxColor: "#000000",
+      boxOpacity: 0.6,
+      visible: true,
+    },
+    {
+      id: "layer-2",
+      text: "底部第二句",
+      x: 10,
+      y: 180,
+      size: 30,
+      color: "#ffff00",
+      strokeWidth: 3,
+      strokeColor: "#000000",
+      useBox: true,
+      boxColor: "#000000",
+      boxOpacity: 0.7,
+      visible: true,
+    },
+  ],
+  activeLayerId: "layer-2",
 };
 
 saveDraftToStorage(draftSample);
@@ -112,6 +143,8 @@ assert.ok(restored !== null);
 assert.equal(restored.inputPath, "/tmp/sample.mp4");
 assert.equal(restored.text, "草稿台词");
 assert.equal(restored.format, "webp");
+assert.equal(restored.textLayers?.length, 2);
+assert.equal(restored.activeLayerId, "layer-2");
 
 clearDraftFromStorage();
 assert.equal(loadDraftFromStorage(), null);

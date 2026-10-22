@@ -74,9 +74,12 @@ struct CropArea {
     height: u32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct TextOverlay {
+    #[allow(dead_code)]
+    #[serde(default)]
+    id: Option<String>,
     text: String,
     x: u32,
     y: u32,
@@ -87,9 +90,11 @@ struct TextOverlay {
     use_box: Option<bool>,
     box_color: Option<String>,
     box_opacity: Option<f64>,
+    #[serde(default)]
+    visible: Option<bool>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct ImageOverlay {
     path: String,
@@ -98,7 +103,7 @@ struct ImageOverlay {
     width: u32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct RenderPlan {
     input_path: String,
@@ -110,6 +115,8 @@ struct RenderPlan {
     fps: u32,
     quality: Option<String>,
     text_overlay: Option<TextOverlay>,
+    #[serde(default)]
+    text_layers: Option<Vec<TextOverlay>>,
     image_overlay: Option<ImageOverlay>,
     #[serde(default)]
     format: Option<String>,
@@ -123,6 +130,23 @@ impl RenderPlan {
             }
         }
         self.output_path.to_ascii_lowercase().ends_with(".webp")
+    }
+
+    fn active_text_layers(&self) -> Vec<&TextOverlay> {
+        if let Some(layers) = &self.text_layers {
+            if !layers.is_empty() {
+                return layers
+                    .iter()
+                    .filter(|l| l.visible.unwrap_or(true) && !l.text.trim().is_empty())
+                    .collect();
+            }
+        }
+        if let Some(single) = &self.text_overlay {
+            if single.visible.unwrap_or(true) && !single.text.trim().is_empty() {
+                return vec![single];
+            }
+        }
+        Vec::new()
     }
 }
 
@@ -439,7 +463,11 @@ fn validate_render_plan(plan: &RenderPlan, media: &MediaInfo) -> CommandResult<(
         }
     }
 
-    if let Some(text) = &plan.text_overlay {
+    let active_layers = plan.active_text_layers();
+    if active_layers.len() > 6 {
+        return Err(app_error("INVALID_TEXT_LAYERS", "文字图层最多支持 6 个。"));
+    }
+    for text in &active_layers {
         if text.text.trim().is_empty() {
             return Err(app_error("INVALID_TEXT", "文字叠加内容不能为空。"));
         }
@@ -448,6 +476,16 @@ fn validate_render_plan(plan: &RenderPlan, media: &MediaInfo) -> CommandResult<(
         }
         if !(8..=192).contains(&text.size) || !is_hex_color(&text.color) {
             return Err(app_error("INVALID_TEXT_STYLE", "文字字号或颜色格式无效。"));
+        }
+        if let Some(stroke_c) = &text.stroke_color {
+            if !is_hex_color(stroke_c) {
+                return Err(app_error("INVALID_TEXT_STYLE", "文字描边颜色格式无效。"));
+            }
+        }
+        if let Some(box_c) = &text.box_color {
+            if !is_hex_color(box_c) {
+                return Err(app_error("INVALID_TEXT_STYLE", "文字底框颜色格式无效。"));
+            }
         }
     }
 
@@ -543,10 +581,11 @@ fn build_filter_graph(plan: &RenderPlan) -> String {
     ));
     source.push_str(&format!(",fps={}", plan.fps));
 
-    if let Some(text) = &plan.text_overlay {
+    let fontfile_opt = detect_system_font();
+    for text in plan.active_text_layers() {
         let mut drawtext_parts = Vec::new();
-        if let Some(fontfile) = detect_system_font() {
-            drawtext_parts.push(format!("fontfile='{}'", escape_drawtext(&fontfile)));
+        if let Some(fontfile) = &fontfile_opt {
+            drawtext_parts.push(format!("fontfile='{}'", escape_drawtext(fontfile)));
         }
         drawtext_parts.push(format!("text='{}'", escape_drawtext(&text.text)));
         drawtext_parts.push(format!("fontcolor={}", color_for_filter(&text.color)));
@@ -1066,6 +1105,7 @@ mod tests {
             fps: 12,
             quality: None,
             text_overlay: None,
+            text_layers: None,
             image_overlay: None,
             format: None,
         };
@@ -1087,6 +1127,7 @@ mod tests {
             fps: 10,
             quality: Some("low".to_string()),
             text_overlay: Some(TextOverlay {
+                id: None,
                 text: "测试文字".to_string(),
                 x: 10,
                 y: 20,
@@ -1097,7 +1138,9 @@ mod tests {
                 use_box: Some(true),
                 box_color: Some("#111111".to_string()),
                 box_opacity: Some(0.65),
+                visible: Some(true),
             }),
+            text_layers: None,
             image_overlay: None,
             format: Some("gif".to_string()),
         };
@@ -1122,6 +1165,7 @@ mod tests {
             fps: 10,
             quality: None,
             text_overlay: Some(TextOverlay {
+                id: None,
                 text: "无底框纯字".to_string(),
                 x: 10,
                 y: 20,
@@ -1132,13 +1176,77 @@ mod tests {
                 use_box: Some(false),
                 box_color: None,
                 box_opacity: None,
+                visible: Some(true),
             }),
+            text_layers: None,
             image_overlay: None,
             format: None,
         };
         let graph = build_filter_graph(&plan);
         assert!(graph.contains("box=0"));
         assert!(!graph.contains("borderw="));
+    }
+
+    #[test]
+    fn builds_multi_text_layers_filter_graph() {
+        let plan = RenderPlan {
+            input_path: "input.mp4".to_string(),
+            output_path: "output.gif".to_string(),
+            start_secs: 0.0,
+            end_secs: 1.0,
+            crop: None,
+            output_width: 320,
+            fps: 10,
+            quality: None,
+            text_overlay: None,
+            text_layers: Some(vec![
+                TextOverlay {
+                    id: Some("layer-top".to_string()),
+                    text: "顶部吐槽".to_string(),
+                    x: 10,
+                    y: 10,
+                    size: 24,
+                    color: "#ffffff".to_string(),
+                    stroke_width: Some(2),
+                    stroke_color: Some("#000000".to_string()),
+                    use_box: Some(true),
+                    box_color: Some("#000000".to_string()),
+                    box_opacity: Some(0.5),
+                    visible: Some(true),
+                },
+                TextOverlay {
+                    id: Some("layer-hidden".to_string()),
+                    text: "隐藏不渲染".to_string(),
+                    x: 50,
+                    y: 50,
+                    size: 20,
+                    color: "#ffff00".to_string(),
+                    visible: Some(false),
+                    ..Default::default()
+                },
+                TextOverlay {
+                    id: Some("layer-bottom".to_string()),
+                    text: "底部反转".to_string(),
+                    x: 10,
+                    y: 150,
+                    size: 28,
+                    color: "#ff0000".to_string(),
+                    stroke_width: None,
+                    stroke_color: None,
+                    use_box: None,
+                    box_color: None,
+                    box_opacity: None,
+                    visible: Some(true),
+                },
+            ]),
+            image_overlay: None,
+            format: Some("gif".to_string()),
+        };
+        let graph = build_filter_graph(&plan);
+        assert!(graph.contains("顶部吐槽"));
+        assert!(graph.contains("底部反转"));
+        assert!(!graph.contains("隐藏不渲染"));
+        assert_eq!(graph.matches("drawtext=").count(), 2);
     }
 
     #[test]
@@ -1153,6 +1261,7 @@ mod tests {
             fps: 15,
             quality: Some("high".to_string()),
             text_overlay: None,
+            text_layers: None,
             image_overlay: None,
             format: Some("webp".to_string()),
         };
@@ -1192,6 +1301,7 @@ mod tests {
             fps: 15,
             quality: None,
             text_overlay: None,
+            text_layers: None,
             image_overlay: None,
             format: Some("webp".to_string()),
         };

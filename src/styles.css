@@ -639,6 +639,16 @@ code {
   border-radius: 4px;
 }
 
+.preview-text.is-active {
+  outline: 1.5px dashed rgba(246, 203, 102, 0.9);
+  outline-offset: 3px;
+}
+
+.preview-text:hover {
+  outline: 1px dashed rgba(255, 255, 255, 0.6);
+  outline-offset: 2px;
+}
+
 .preview-sticker {
   position: absolute;
   display: grid;
@@ -1033,6 +1043,115 @@ code {
 
 .overlay-fields {
   padding: 0 0 2px 24px;
+}
+
+.layer-tabs-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 5px;
+  padding: 1px 0;
+}
+
+.layer-tabs-list {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.layer-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 23px;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.layer-tab-btn:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.layer-tab-btn.is-active {
+  background: rgba(246, 203, 102, 0.12);
+  border-color: var(--accent);
+  color: var(--accent-light);
+  font-weight: 500;
+}
+
+.layer-tab-btn.is-hidden {
+  opacity: 0.45;
+}
+
+.tab-tag {
+  font-family: var(--mono);
+  font-size: 9px;
+  padding: 1px 3px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--accent);
+}
+
+.tab-snippet {
+  max-width: 52px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layer-action-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 1px;
+  border-radius: 2px;
+  color: var(--faint);
+  font-size: 10px;
+  line-height: 1;
+  user-select: none;
+}
+
+.layer-action-icon:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.layer-action-icon.del-icon:hover {
+  color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.2);
+}
+
+.add-layer-btn {
+  flex-shrink: 0;
+  height: 23px;
+  padding: 0 6px;
+  border: 1px dashed rgba(246, 203, 102, 0.35);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.add-layer-btn:hover {
+  background: rgba(246, 203, 102, 0.1);
+  border-color: var(--accent);
 }
 
 .text-style-grid {
