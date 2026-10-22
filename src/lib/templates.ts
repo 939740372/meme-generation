@@ -50,6 +50,7 @@ export interface StudioDraft {
   fps: number;
   quality: "low" | "medium" | "high";
   format: "gif" | "webp" | "avif";
+  videoFilter?: string;
   selectedPresetId: string;
   useText: boolean;
   text: string;

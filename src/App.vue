@@ -361,6 +361,50 @@ const imageX = ref(24);
 const imageY = ref(24);
 const imageWidth = ref(120);
 
+// 画面画风与速度特效
+export type VideoFilterKey =
+  | "none"
+  | "grayscale"
+  | "contrast"
+  | "vintage"
+  | "invert"
+  | "fast2x"
+  | "slow05x"
+  | "reverse";
+
+export interface VideoFilterOption {
+  key: VideoFilterKey;
+  label: string;
+  icon: string;
+  badge: string;
+  cssFilter: string;
+}
+
+const VIDEO_FILTERS: VideoFilterOption[] = [
+  { key: "none", label: "原色", icon: "✨", badge: "默认", cssFilter: "none" },
+  { key: "grayscale", label: "黑白", icon: "🖤", badge: "致郁emo", cssFilter: "grayscale(100%)" },
+  { key: "contrast", label: "高反差", icon: "⚡", badge: "戏剧感", cssFilter: "contrast(160%) saturate(140%)" },
+  { key: "vintage", label: "复古", icon: "🎞️", badge: "港片暖色", cssFilter: "sepia(55%) contrast(110%)" },
+  { key: "invert", label: "反色", icon: "🧪", badge: "精神污染", cssFilter: "invert(100%)" },
+  { key: "fast2x", label: "2x加速", icon: "🚀", badge: "鬼畜魔性", cssFilter: "none" },
+  { key: "slow05x", label: "0.5x慢放", icon: "🐢", badge: "慢速特写", cssFilter: "none" },
+  { key: "reverse", label: "倒放", icon: "⏪", badge: "物理逆转", cssFilter: "none" },
+];
+
+const currentVideoFilter = ref<VideoFilterKey>("none");
+
+const currentFilterOption = computed(
+  () => VIDEO_FILTERS.find((f) => f.key === currentVideoFilter.value) || VIDEO_FILTERS[0]
+);
+
+const currentVideoFilterCss = computed(() => currentFilterOption.value.cssFilter);
+
+function setVideoFilter(key: VideoFilterKey): void {
+  currentVideoFilter.value = key;
+  onManualParameterChange();
+  showToast(`已应用画风特效: ${currentFilterOption.value.label} · ${currentFilterOption.value.badge}`);
+}
+
 const stageRef = ref<HTMLElement | null>(null);
 const timelineTrackRef = ref<HTMLElement | null>(null);
 const stageSize = reactive({ width: 0, height: 0 });
@@ -956,6 +1000,7 @@ function buildRenderPlan(): RenderPlan {
     outputWidth: Number(outputWidth.value),
     fps: Number(fps.value),
     quality: currentQuality.value,
+    videoFilter: currentVideoFilter.value !== "none" ? currentVideoFilter.value : undefined,
     textOverlay: useText.value && activeLayers.length > 0 ? activeLayers[0] : null,
     textLayers: useText.value && activeLayers.length > 0 ? activeLayers : null,
     imageOverlay:
@@ -1173,6 +1218,12 @@ async function loadHistoryPlan(record: ExportRecord): Promise<void> {
     exportFormat.value = "webp";
   } else {
     exportFormat.value = "gif";
+  }
+
+  if (p.videoFilter) {
+    currentVideoFilter.value = p.videoFilter as VideoFilterKey;
+  } else {
+    currentVideoFilter.value = "none";
   }
 
   outputPath.value = p.outputPath;
@@ -1661,6 +1712,7 @@ function buildCurrentDraft(): StudioDraft {
     fps: Number(fps.value),
     quality: currentQuality.value,
     format: exportFormat.value,
+    videoFilter: currentVideoFilter.value,
     selectedPresetId: selectedPresetId.value,
     useText: useText.value,
     text: text.value,
@@ -1770,6 +1822,7 @@ async function restoreDraftIfAvailable(): Promise<void> {
         fps.value = draft.fps;
         currentQuality.value = draft.quality;
         exportFormat.value = draft.format;
+        currentVideoFilter.value = (draft.videoFilter as VideoFilterKey) || "none";
         selectedPresetId.value = draft.selectedPresetId;
         useText.value = draft.useText;
         if (draft.textLayers && draft.textLayers.length > 0) {
@@ -2085,9 +2138,11 @@ onBeforeUnmount(() => {
             <div ref="stageRef" class="preview-stage" :style="previewStyle">
               <template v-if="media">
                 <div class="preview-art">
-                  <div class="preview-grid"></div>
-                  <div class="preview-orb orb-a"></div>
-                  <div class="preview-orb orb-b"></div>
+                  <div class="preview-bg-effects" :style="{ filter: currentVideoFilterCss }">
+                    <div class="preview-grid"></div>
+                    <div class="preview-orb orb-a"></div>
+                    <div class="preview-orb orb-b"></div>
+                  </div>
                   <template v-if="useText">
                     <template v-for="layer in textLayers" :key="layer.id">
                       <div
@@ -2332,6 +2387,30 @@ onBeforeUnmount(() => {
                 <label class="field"><span>Y</span><input v-model.number="crop.y" type="number" min="0" step="1" /></label>
                 <label class="field"><span>W</span><input v-model.number="crop.width" type="number" min="20" step="1" /></label>
                 <label class="field"><span>H</span><input v-model.number="crop.height" type="number" min="20" step="1" /></label>
+              </div>
+
+              <!-- 画风特效与速度调节 -->
+              <div class="video-filter-section">
+                <div class="filter-header-row">
+                  <span class="filter-header-title">画风特效</span>
+                  <span class="filter-current-tag" :class="currentVideoFilter">
+                    {{ currentFilterOption.icon }} {{ currentFilterOption.label }} · {{ currentFilterOption.badge }}
+                  </span>
+                </div>
+                <div class="filter-pills-grid">
+                  <button
+                    v-for="f in VIDEO_FILTERS"
+                    :key="f.key"
+                    type="button"
+                    class="video-filter-pill"
+                    :class="{ active: currentVideoFilter === f.key, [`filter-${f.key}`]: true }"
+                    :title="`${f.label} (${f.badge})`"
+                    @click="setVideoFilter(f.key)"
+                  >
+                    <span class="filter-pill-icon">{{ f.icon }}</span>
+                    <span class="filter-pill-label">{{ f.label }}</span>
+                  </button>
+                </div>
               </div>
             </div>
 
