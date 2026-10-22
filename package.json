@@ -9,6 +9,7 @@
     "typecheck": "vue-tsc --noEmit",
     "build": "pnpm typecheck && vite build",
     "preview": "vite preview",
+    "prepare:sidecar": "node scripts/download-ffmpeg-sidecar.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"

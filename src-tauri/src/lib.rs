@@ -149,9 +149,94 @@ struct RenderState {
     processes: Arc<Mutex<HashMap<String, ManagedProcess>>>,
 }
 
-fn binary_from_env(name: &str) -> String {
+fn resolve_binary(name: &str) -> PathBuf {
+    // 1. 优先使用环境变量指定的可执行文件
     let variable = format!("{}_BINARY", name.to_ascii_uppercase());
-    env::var(variable).unwrap_or_else(|_| name.to_string())
+    if let Ok(value) = env::var(&variable) {
+        if !value.trim().is_empty() {
+            return PathBuf::from(value);
+        }
+    }
+
+    // 2. 检查应用可执行文件同级或 resources/binaries 目录（生产打包环境）
+    if let Ok(current_exe) = env::current_exe() {
+        if let Some(exe_dir) = current_exe.parent() {
+            let direct = exe_dir.join(name);
+            if direct.is_file() {
+                return direct;
+            }
+            let direct_exe = exe_dir.join(format!("{}.exe", name));
+            if direct_exe.is_file() {
+                return direct_exe;
+            }
+            let res_candidate = exe_dir.join("../Resources/binaries").join(name);
+            if res_candidate.is_file() {
+                return res_candidate;
+            }
+        }
+    }
+
+    // 3. 检查开发环境下的 src-tauri/binaries/<name>-<target-triple>
+    let target_triple = match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("macos", "aarch64") => "aarch64-apple-darwin",
+        ("macos", "x86_64") => "x86_64-apple-darwin",
+        ("windows", "x86_64") => "x86_64-pc-windows-msvc",
+        ("linux", "x86_64") => "x86_64-unknown-linux-gnu",
+        _ => "",
+    };
+
+    if !target_triple.is_empty() {
+        let binary_filename = if cfg!(windows) {
+            format!("{}-{}.exe", name, target_triple)
+        } else {
+            format!("{}-{}", name, target_triple)
+        };
+
+        let dev_candidates = [
+            PathBuf::from("src-tauri").join("binaries").join(&binary_filename),
+            PathBuf::from("binaries").join(&binary_filename),
+            PathBuf::from("..").join("src-tauri").join("binaries").join(&binary_filename),
+        ];
+
+        for candidate in dev_candidates {
+            if candidate.is_file() {
+                return candidate;
+            }
+        }
+    }
+
+    // 4. 回退到系统的 PATH
+    PathBuf::from(name)
+}
+
+fn detect_system_font() -> Option<String> {
+    let candidates: &[&str] = if cfg!(target_os = "macos") {
+        &[
+            "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/Helvetica.ttc",
+            "/System/Library/Fonts/Supplemental/Arial.ttf",
+            "/Library/Fonts/Arial.ttf",
+        ]
+    } else if cfg!(target_os = "windows") {
+        &[
+            "C:\\Windows\\Fonts\\msyh.ttc",
+            "C:\\Windows\\Fonts\\simhei.ttf",
+            "C:\\Windows\\Fonts\\arial.ttf",
+        ]
+    } else {
+        &[
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+        ]
+    };
+
+    for font in candidates {
+        if Path::new(font).exists() {
+            return Some((*font).to_string());
+        }
+    }
+    None
 }
 
 fn path_to_string(path: &Path) -> CommandResult<String> {
@@ -194,7 +279,8 @@ fn parse_ratio(value: &str) -> Option<f64> {
 fn probe_media(path: &Path) -> CommandResult<MediaInfo> {
     validate_input_file(path)?;
     let path_string = path_to_string(path)?;
-    let output = Command::new(binary_from_env("ffprobe"))
+    let ffprobe_bin = resolve_binary("ffprobe");
+    let output = Command::new(&ffprobe_bin)
         .args([
             "-v",
             "error",
@@ -210,7 +296,11 @@ fn probe_media(path: &Path) -> CommandResult<MediaInfo> {
         .map_err(|error| {
             app_error(
                 "FFPROBE_UNAVAILABLE",
-                format!("无法启动 ffprobe：{}。请安装 FFmpeg 或设置 FFPROBE_BINARY。", error),
+                format!(
+                    "无法启动 ffprobe（{}）：{}。请确保已下载 sidecar 或设置 FFPROBE_BINARY。",
+                    ffprobe_bin.display(),
+                    error
+                ),
             )
         })?;
 
@@ -405,14 +495,18 @@ fn build_filter_graph(plan: &RenderPlan) -> String {
     source.push_str(&format!(",fps={}", plan.fps));
 
     if let Some(text) = &plan.text_overlay {
-        source.push_str(&format!(
-            ",drawtext=text='{}':fontcolor={}:fontsize={}:x={}:y={}:box=1:boxcolor=black@0.45:boxborderw=8",
-            escape_drawtext(&text.text),
-            color_for_filter(&text.color),
-            text.size,
-            text.x,
-            text.y
-        ));
+        let mut drawtext_parts = Vec::new();
+        if let Some(fontfile) = detect_system_font() {
+            drawtext_parts.push(format!("fontfile='{}'", escape_drawtext(&fontfile)));
+        }
+        drawtext_parts.push(format!("text='{}'", escape_drawtext(&text.text)));
+        drawtext_parts.push(format!("fontcolor={}", color_for_filter(&text.color)));
+        drawtext_parts.push(format!("fontsize={}", text.size));
+        drawtext_parts.push(format!("x={}", text.x));
+        drawtext_parts.push(format!("y={}", text.y));
+        drawtext_parts.push("box=1:boxcolor=black@0.45:boxborderw=8".to_string());
+
+        source.push_str(&format!(",drawtext={}", drawtext_parts.join(":")));
     }
 
     let mut graph = format!("[0:v]{}[base]", source);
@@ -476,7 +570,8 @@ fn build_ffmpeg_args(plan: &RenderPlan) -> Vec<String> {
 }
 
 fn ffmpeg_supports_filter(filter_name: &str) -> Option<bool> {
-    let output = Command::new(binary_from_env("ffmpeg"))
+    let ffmpeg_bin = resolve_binary("ffmpeg");
+    let output = Command::new(&ffmpeg_bin)
         .args(["-hide_banner", "-filters"])
         .output()
         .ok()?;
@@ -676,7 +771,8 @@ fn render_gif(
         ));
     }
     let args = build_ffmpeg_args(&plan);
-    let mut child = Command::new(binary_from_env("ffmpeg"))
+    let ffmpeg_bin = resolve_binary("ffmpeg");
+    let mut child = Command::new(&ffmpeg_bin)
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -684,7 +780,11 @@ fn render_gif(
         .map_err(|error| {
             app_error(
                 "FFMPEG_UNAVAILABLE",
-                format!("无法启动 ffmpeg：{}。请安装 FFmpeg 或设置 FFMPEG_BINARY。", error),
+                format!(
+                    "无法启动 ffmpeg（{}）：{}。请确保已下载 sidecar 或设置 FFMPEG_BINARY。",
+                    ffmpeg_bin.display(),
+                    error
+                ),
             )
         })?;
     let stdout = child.stdout.take();
@@ -799,5 +899,39 @@ mod tests {
         assert!(graph.contains("palettegen"));
         assert!(graph.contains("paletteuse"));
         assert!(graph.contains("scale=480:-1"));
+    }
+
+    #[test]
+    fn builds_drawtext_filter_graph_with_font() {
+        let plan = RenderPlan {
+            input_path: "input.mp4".to_string(),
+            output_path: "output.gif".to_string(),
+            start_secs: 0.0,
+            end_secs: 1.0,
+            crop: None,
+            output_width: 320,
+            fps: 10,
+            text_overlay: Some(TextOverlay {
+                text: "测试文字".to_string(),
+                x: 10,
+                y: 20,
+                size: 24,
+                color: "#ff0000".to_string(),
+            }),
+            image_overlay: None,
+        };
+        let graph = build_filter_graph(&plan);
+        assert!(graph.contains("drawtext="));
+        assert!(graph.contains("测试文字"));
+        assert!(graph.contains("fontcolor=0xff0000"));
+        assert!(graph.contains("fontsize=24"));
+    }
+
+    #[test]
+    fn resolves_binary_with_env_override() {
+        env::set_var("MOCK_BIN_BINARY", "/custom/bin/mock");
+        let resolved = resolve_binary("mock_bin");
+        assert_eq!(resolved, PathBuf::from("/custom/bin/mock"));
+        env::remove_var("MOCK_BIN_BINARY");
     }
 }
