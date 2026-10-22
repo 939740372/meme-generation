@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import {
   cancelRender,
   copyFileToClipboard,
@@ -18,6 +18,17 @@ import {
   type MediaInfo,
   type RenderPlan,
 } from "./lib/desktop";
+import {
+  BUILTIN_TEMPLATES,
+  clearDraftFromStorage,
+  deleteCustomTemplate,
+  getCustomTemplates,
+  loadDraftFromStorage,
+  saveCustomTemplate,
+  saveDraftToStorage,
+  type MemeTemplate,
+  type StudioDraft,
+} from "./lib/templates";
 
 type TaskStatus =
   | "idle"
@@ -40,6 +51,19 @@ const errorMessage = ref("");
 const taskId = ref<string | null>(null);
 const outputBytes = ref(0);
 const stopListening = ref<(() => void) | null>(null);
+
+const drawerTab = ref<"history" | "templates">("history");
+const customTemplates = ref<MemeTemplate[]>([]);
+const isSaveTemplateModalOpen = ref(false);
+const newTemplateName = ref("");
+const templateNameInputRef = ref<HTMLInputElement | null>(null);
+
+const allTemplatesList = computed(() => [
+  ...BUILTIN_TEMPLATES,
+  ...customTemplates.value,
+]);
+
+const allTemplatesCount = computed(() => allTemplatesList.value.length);
 
 const startSecs = ref(0);
 const endSecs = ref(3);
@@ -1049,14 +1073,299 @@ async function connectDesktopEvents(): Promise<void> {
   }
 }
 
+// 模板相关操作
+function loadTemplates(): void {
+  customTemplates.value = getCustomTemplates();
+}
+
+function openTemplatesDrawer(): void {
+  drawerTab.value = "templates";
+  isDrawerOpen.value = true;
+}
+
+function openSaveTemplateModal(): void {
+  newTemplateName.value = "我的排版模板";
+  isSaveTemplateModalOpen.value = true;
+  nextTick(() => {
+    templateNameInputRef.value?.focus();
+  });
+}
+
+function confirmSaveTemplate(): void {
+  const name = newTemplateName.value.trim();
+  if (!name) return;
+
+  let xRatio = 0.5;
+  let yRatio = 0.85;
+  if (media.value && media.value.width > 0 && media.value.height > 0) {
+    xRatio = Number((textX.value / media.value.width).toFixed(3));
+    yRatio = Number((textY.value / media.value.height).toFixed(3));
+  }
+
+  saveCustomTemplate({
+    name,
+    description: `自定义样式 · 字号 ${textSize.value} · ${textColor.value}`,
+    badge: "我的模板",
+    textStyle: {
+      defaultText: text.value || "示例台词",
+      size: Number(textSize.value),
+      color: textColor.value,
+      strokeWidth: Number(textStrokeWidth.value),
+      strokeColor: textStrokeColor.value,
+      useBox: Boolean(textUseBox.value),
+      boxColor: textBoxColor.value,
+      boxOpacity: Number(textBoxOpacity.value),
+      positionRatio: { x: xRatio, y: yRatio },
+    },
+    suggestedPresetId: selectedPresetId.value !== "custom" ? selectedPresetId.value : undefined,
+    suggestedFormat: exportFormat.value,
+  });
+
+  loadTemplates();
+  isSaveTemplateModalOpen.value = false;
+  showToast(`已成功保存模板「${name}」！可在模板库中查看`);
+}
+
+function handleDeleteTemplate(id: string): void {
+  deleteCustomTemplate(id);
+  loadTemplates();
+  showToast("模板已删除");
+}
+
+function applyTemplate(tpl: MemeTemplate): void {
+  useText.value = true;
+  if (!text.value.trim() || text.value === "输入文字") {
+    text.value = tpl.textStyle.defaultText || "输入文字";
+  }
+  textSize.value = tpl.textStyle.size;
+  textColor.value = tpl.textStyle.color;
+  textStrokeWidth.value = tpl.textStyle.strokeWidth;
+  textStrokeColor.value = tpl.textStyle.strokeColor;
+  textUseBox.value = tpl.textStyle.useBox;
+  textBoxColor.value = tpl.textStyle.boxColor;
+  textBoxOpacity.value = tpl.textStyle.boxOpacity;
+
+  if (media.value) {
+    textX.value = Math.max(0, Math.round(media.value.width * tpl.textStyle.positionRatio.x));
+    textY.value = Math.max(0, Math.round(media.value.height * tpl.textStyle.positionRatio.y));
+  }
+
+  if (tpl.suggestedPresetId) {
+    const p = PRESETS.find((item) => item.id === tpl.suggestedPresetId);
+    if (p) applyPreset(p);
+  }
+  if (tpl.suggestedFormat) {
+    setExportFormat(tpl.suggestedFormat);
+  }
+
+  isDrawerOpen.value = false;
+  showToast(`已套用「${tpl.name}」模板`);
+}
+
+// 草稿自动暂存与恢复
+let draftAutoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+let isRestoringDraft = false;
+
+function buildCurrentDraft(): StudioDraft {
+  return {
+    version: 1,
+    updatedAt: Date.now(),
+    inputPath: inputPath.value,
+    outputPath: outputPath.value,
+    startSecs: Number(startSecs.value),
+    endSecs: Number(endSecs.value),
+    useCrop: useCrop.value,
+    crop: { ...crop },
+    outputWidth: Number(outputWidth.value),
+    fps: Number(fps.value),
+    quality: currentQuality.value,
+    format: exportFormat.value,
+    selectedPresetId: selectedPresetId.value,
+    useText: useText.value,
+    text: text.value,
+    textX: Number(textX.value),
+    textY: Number(textY.value),
+    textSize: Number(textSize.value),
+    textColor: textColor.value,
+    textStrokeWidth: Number(textStrokeWidth.value),
+    textStrokeColor: textStrokeColor.value,
+    textUseBox: Boolean(textUseBox.value),
+    textBoxColor: textBoxColor.value,
+    textBoxOpacity: Number(textBoxOpacity.value),
+    useImage: useImage.value,
+    imagePath: imagePath.value,
+    imageX: Number(imageX.value),
+    imageY: Number(imageY.value),
+    imageWidth: Number(imageWidth.value),
+  };
+}
+
+function queueDraftSave(): void {
+  if (isRestoringDraft) return;
+  if (draftAutoSaveTimer) {
+    clearTimeout(draftAutoSaveTimer);
+  }
+  draftAutoSaveTimer = setTimeout(() => {
+    if (!inputPath.value && !text.value && !useCrop.value) {
+      return;
+    }
+    saveDraftToStorage(buildCurrentDraft());
+  }, 400);
+}
+
+const hasActiveDraftOrMedia = computed(() => {
+  return Boolean(media.value || inputPath.value || text.value || useCrop.value || useImage.value);
+});
+
+function resetWorkspace(): void {
+  if (draftAutoSaveTimer) {
+    clearTimeout(draftAutoSaveTimer);
+  }
+  clearDraftFromStorage();
+  media.value = null;
+  inputPath.value = "";
+  outputPath.value = "";
+  startSecs.value = 0;
+  endSecs.value = 3;
+  useCrop.value = false;
+  crop.x = 0;
+  crop.y = 0;
+  crop.width = 480;
+  crop.height = 270;
+  outputWidth.value = 480;
+  fps.value = 12;
+  currentQuality.value = "medium";
+  selectedPresetId.value = "custom";
+  exportFormat.value = "gif";
+  useText.value = false;
+  text.value = "输入文字";
+  textX.value = 20;
+  textY.value = 40;
+  textSize.value = 28;
+  textColor.value = "#ffffff";
+  textStrokeWidth.value = 2;
+  textStrokeColor.value = "#000000";
+  textUseBox.value = false;
+  textBoxColor.value = "#000000";
+  textBoxOpacity.value = 0.6;
+  useImage.value = false;
+  imagePath.value = "";
+  status.value = "idle";
+  statusMessage.value = "选择一个视频开始制作。";
+  errorMessage.value = "";
+  showToast("工作区已重置为初始状态");
+}
+
+async function restoreDraftIfAvailable(): Promise<void> {
+  const draft = loadDraftFromStorage();
+  if (!draft) return;
+
+  isRestoringDraft = true;
+  try {
+    if (draft.inputPath) {
+      try {
+        const nextMedia = await probeMedia(draft.inputPath);
+        media.value = nextMedia;
+        inputPath.value = draft.inputPath;
+        outputPath.value = draft.outputPath || defaultOutputPath(draft.inputPath, draft.format);
+        startSecs.value = draft.startSecs;
+        endSecs.value = draft.endSecs;
+        useCrop.value = draft.useCrop;
+        crop.x = draft.crop.x;
+        crop.y = draft.crop.y;
+        crop.width = draft.crop.width;
+        crop.height = draft.crop.height;
+        outputWidth.value = draft.outputWidth;
+        fps.value = draft.fps;
+        currentQuality.value = draft.quality;
+        exportFormat.value = draft.format;
+        selectedPresetId.value = draft.selectedPresetId;
+        useText.value = draft.useText;
+        text.value = draft.text;
+        textX.value = draft.textX;
+        textY.value = draft.textY;
+        textSize.value = draft.textSize;
+        textColor.value = draft.textColor;
+        textStrokeWidth.value = draft.textStrokeWidth;
+        textStrokeColor.value = draft.textStrokeColor;
+        textUseBox.value = draft.textUseBox;
+        textBoxColor.value = draft.textBoxColor;
+        textBoxOpacity.value = draft.textBoxOpacity;
+        useImage.value = draft.useImage;
+        imagePath.value = draft.imagePath;
+        imageX.value = draft.imageX;
+        imageY.value = draft.imageY;
+        imageWidth.value = draft.imageWidth;
+        status.value = "ready";
+        statusMessage.value = "已自动还原上次编辑草稿。";
+        showToast("已自动恢复上次编辑草稿");
+      } catch {
+        errorMessage.value = "上次编辑的视频文件已移动或无法访问，已恢复排版参数。";
+        useText.value = draft.useText;
+        text.value = draft.text;
+        textSize.value = draft.textSize;
+        textColor.value = draft.textColor;
+        textStrokeWidth.value = draft.textStrokeWidth;
+        textStrokeColor.value = draft.textStrokeColor;
+        textUseBox.value = draft.textUseBox;
+        textBoxColor.value = draft.textBoxColor;
+        textBoxOpacity.value = draft.textBoxOpacity;
+      }
+    }
+  } finally {
+    isRestoringDraft = false;
+  }
+}
+
+watch(
+  [
+    inputPath,
+    outputPath,
+    startSecs,
+    endSecs,
+    useCrop,
+    () => crop.x,
+    () => crop.y,
+    () => crop.width,
+    () => crop.height,
+    outputWidth,
+    fps,
+    currentQuality,
+    exportFormat,
+    selectedPresetId,
+    useText,
+    text,
+    textX,
+    textY,
+    textSize,
+    textColor,
+    textStrokeWidth,
+    textStrokeColor,
+    textUseBox,
+    textBoxColor,
+    textBoxOpacity,
+    useImage,
+    imagePath,
+    imageX,
+    imageY,
+    imageWidth,
+  ],
+  () => {
+    queueDraftSave();
+  },
+  { deep: false },
+);
+
 let resizeObserver: ResizeObserver | null = null;
 
 onMounted(async () => {
   try {
+    loadTemplates();
     loadHistoryFromStorage();
     window.addEventListener("keydown", handleKeydown);
     desktopInfo.value = await getDesktopInfo();
     await connectDesktopEvents();
+    await restoreDraftIfAvailable();
     if (stageRef.value && typeof ResizeObserver !== "undefined") {
       resizeObserver = new ResizeObserver(() => {
         updateStageSize();
@@ -1070,6 +1379,9 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  if (draftAutoSaveTimer) {
+    clearTimeout(draftAutoSaveTimer);
+  }
   stopListening.value?.();
   resizeObserver?.disconnect();
   window.removeEventListener("keydown", handleKeydown);
@@ -1100,8 +1412,18 @@ onBeforeUnmount(() => {
       <nav class="side-nav" aria-label="主导航">
         <a class="side-nav-item active" href="#workspace">
           <span class="nav-icon">✦</span>
-          GIF 制作
+          动图制作
         </a>
+        <button
+          type="button"
+          class="side-nav-item side-nav-btn"
+          title="打开排版模板库"
+          @click="openTemplatesDrawer"
+        >
+          <span class="nav-icon">📑</span>
+          模板库
+          <span class="side-nav-badge">{{ allTemplatesCount }}</span>
+        </button>
       </nav>
 
       <div class="sidebar-history-section">
@@ -1192,6 +1514,17 @@ onBeforeUnmount(() => {
     <main id="workspace" class="studio-main">
       <header class="topbar">
         <div class="topbar-meta"><span class="status-mark"></span>{{ isDesktop ? "桌面端" : "预览" }}</div>
+        <div class="topbar-actions">
+          <button
+            v-if="hasActiveDraftOrMedia"
+            type="button"
+            class="topbar-reset-btn"
+            title="清空当前草稿并重置所有编辑参数"
+            @click="resetWorkspace"
+          >
+            ↺ 重置工作区
+          </button>
+        </div>
       </header>
 
       <div class="page-content">
@@ -1445,7 +1778,17 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="control-section">
-              <div class="section-label"><span>03</span> 叠加</div>
+              <div class="section-label-row">
+                <div class="section-label"><span>03</span> 叠加</div>
+                <div v-if="useText" class="template-quick-actions">
+                  <button type="button" class="template-link-btn" title="浏览表情包排版模板库" @click="openTemplatesDrawer">
+                    📑 套用模板
+                  </button>
+                  <button type="button" class="template-link-btn" title="将当前文字排版存为我的模板" @click="openSaveTemplateModal">
+                    ＋ 存为模板
+                  </button>
+                </div>
+              </div>
               <label class="toggle-row"><input v-model="useText" type="checkbox" /><span class="toggle-ui"></span><span>文字</span></label>
               <div v-if="useText" class="overlay-fields">
                 <label class="field field-wide"><span>内容</span><input v-model="text" type="text" maxlength="80" placeholder="输入文字" /></label>
@@ -1574,29 +1917,58 @@ onBeforeUnmount(() => {
 
       </div>
 
-      <!-- 底部滑出式历史抽屉 -->
+      <!-- 底部滑出式抽屉（导出历史与排版模板） -->
       <Transition name="drawer-slide">
         <div v-if="isDrawerOpen" class="history-drawer-backdrop" @click="isDrawerOpen = false">
           <div class="history-drawer-panel" @click.stop>
             <div class="drawer-header">
               <div class="drawer-header-left">
-                <span class="drawer-dot"></span>
-                <strong>导出历史</strong>
-                <span class="drawer-count-chip">共 {{ historyList.length }} 个动图</span>
+                <div class="drawer-tabs">
+                  <button
+                    type="button"
+                    class="drawer-tab"
+                    :class="{ active: drawerTab === 'history' }"
+                    @click="drawerTab = 'history'"
+                  >
+                    <span>🕒 导出历史</span>
+                    <span class="drawer-count-chip">{{ historyList.length }}</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="drawer-tab"
+                    :class="{ active: drawerTab === 'templates' }"
+                    @click="drawerTab = 'templates'"
+                  >
+                    <span>📑 表情包模板</span>
+                    <span class="drawer-count-chip">{{ allTemplatesList.length }}</span>
+                  </button>
+                </div>
               </div>
               <div class="drawer-header-right">
-                <button
-                  v-if="historyList.length > 0"
-                  type="button"
-                  class="drawer-clear-btn"
-                  @click="clearAllHistory"
-                >
-                  清空历史
-                </button>
+                <template v-if="drawerTab === 'history'">
+                  <button
+                    v-if="historyList.length > 0"
+                    type="button"
+                    class="drawer-clear-btn"
+                    @click="clearAllHistory"
+                  >
+                    清空历史
+                  </button>
+                </template>
+                <template v-else>
+                  <button
+                    type="button"
+                    class="drawer-add-template-btn"
+                    title="将当前工作区文字排版保存为新模板"
+                    @click="openSaveTemplateModal"
+                  >
+                    ＋ 存为我的模板
+                  </button>
+                </template>
                 <button
                   type="button"
                   class="drawer-close-btn"
-                  aria-label="关闭历史抽屉"
+                  aria-label="关闭抽屉"
                   @click="isDrawerOpen = false"
                 >
                   ✕
@@ -1604,77 +1976,189 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <div v-if="historyList.length > 0" class="drawer-cards-strip">
-              <div
-                v-for="item in historyList"
-                :key="item.id"
-                class="history-card"
-              >
-                <div class="history-card-thumb">
-                  <img v-if="item.previewUrl" :src="item.previewUrl" :alt="item.fileName" />
-                  <div v-else class="card-thumb-fallback">
-                    <span>{{ item.fileName.toLowerCase().endsWith('.webp') ? 'WEBP' : 'GIF' }}</span>
+            <!-- Tab 1: 历史记录卡片横轴 -->
+            <div v-if="drawerTab === 'history'" class="drawer-tab-content">
+              <div v-if="historyList.length > 0" class="drawer-cards-strip">
+                <div
+                  v-for="item in historyList"
+                  :key="item.id"
+                  class="history-card"
+                >
+                  <div class="history-card-thumb">
+                    <img v-if="item.previewUrl" :src="item.previewUrl" :alt="item.fileName" />
+                    <div v-else class="card-thumb-fallback">
+                      <span>{{ item.fileName.toLowerCase().endsWith('.webp') ? 'WEBP' : 'GIF' }}</span>
+                    </div>
+                    <span class="history-card-size-pill">{{ formatBytes(item.outputBytes) }}</span>
                   </div>
-                  <span class="history-card-size-pill">{{ formatBytes(item.outputBytes) }}</span>
-                </div>
 
-                <div class="history-card-body">
-                  <div class="history-card-title-row">
-                    <strong class="history-card-filename" :title="item.fileName">{{ item.fileName }}</strong>
-                    <span class="history-format-badge" :class="item.fileName.toLowerCase().endsWith('.webp') ? 'badge-webp' : 'badge-gif'">
-                      {{ item.fileName.toLowerCase().endsWith('.webp') ? 'WEBP' : 'GIF' }}
-                    </span>
-                    <small class="history-card-time">{{ formatRelativeTime(item.timestamp) }}</small>
+                  <div class="history-card-body">
+                    <div class="history-card-title-row">
+                      <strong class="history-card-filename" :title="item.fileName">{{ item.fileName }}</strong>
+                      <span class="history-format-badge" :class="item.fileName.toLowerCase().endsWith('.webp') ? 'badge-webp' : 'badge-gif'">
+                        {{ item.fileName.toLowerCase().endsWith('.webp') ? 'WEBP' : 'GIF' }}
+                      </span>
+                      <small class="history-card-time">{{ formatRelativeTime(item.timestamp) }}</small>
+                    </div>
+                    <div class="history-card-desc">
+                      <span>{{ item.plan.outputWidth }}px · {{ item.plan.fps }} FPS</span>
+                      <span v-if="item.plan.quality">· {{ item.plan.quality }}</span>
+                    </div>
+                    <div class="history-card-actions">
+                      <button
+                        type="button"
+                        class="history-btn primary-subtle"
+                        title="在访达/资源管理器中定位"
+                        @click="revealExportFile(item.filePath)"
+                      >
+                        访达定位
+                      </button>
+                      <button
+                        type="button"
+                        class="history-btn"
+                        title="复制文件到剪贴板"
+                        @click="copyExportFile(item.filePath)"
+                      >
+                        复制
+                      </button>
+                      <button
+                        type="button"
+                        class="history-btn"
+                        title="载入此条历史制作参数"
+                        @click="loadHistoryPlan(item)"
+                      >
+                        载入参数
+                      </button>
+                      <button
+                        type="button"
+                        class="history-btn delete-btn"
+                        title="从历史记录删除"
+                        @click="removeHistoryItem(item.id)"
+                      >
+                        ×
+                      </button>
+                    </div>
                   </div>
-                  <div class="history-card-desc">
-                    <span>{{ item.plan.outputWidth }}px · {{ item.plan.fps }} FPS</span>
-                    <span v-if="item.plan.quality">· {{ item.plan.quality }}</span>
+                </div>
+              </div>
+              <div v-else class="drawer-empty-state">
+                <div class="empty-icon">✦</div>
+                <strong>暂无导出历史</strong>
+                <span>在此完成的动图将保存在这里，支持一键定位、复制与参数回溯。</span>
+              </div>
+            </div>
+
+            <!-- Tab 2: 表情包排版模板列表 -->
+            <div v-else class="drawer-tab-content">
+              <div class="drawer-cards-strip templates-strip">
+                <div
+                  v-for="tpl in allTemplatesList"
+                  :key="tpl.id"
+                  class="template-card"
+                  :class="{ 'is-custom': tpl.category === 'custom' }"
+                >
+                  <div class="template-card-preview">
+                    <div
+                      class="template-preview-badge-pill"
+                      :style="{
+                        color: tpl.textStyle.color,
+                        background: tpl.textStyle.useBox
+                          ? `${tpl.textStyle.boxColor}aa`
+                          : 'rgba(0,0,0,0.6)',
+                        border: tpl.textStyle.strokeWidth > 0
+                          ? `1px solid ${tpl.textStyle.strokeColor}`
+                          : '1px solid rgba(255,255,255,0.15)',
+                      }"
+                    >
+                      <span class="preview-mini-quote">“</span>
+                      <span>{{ tpl.textStyle.defaultText || '示例排版' }}</span>
+                      <span class="preview-mini-quote">”</span>
+                    </div>
                   </div>
-                  <div class="history-card-actions">
-                    <button
-                      type="button"
-                      class="history-btn primary-subtle"
-                      title="在访达/资源管理器中定位"
-                      @click="revealExportFile(item.filePath)"
-                    >
-                      访达定位
-                    </button>
-                    <button
-                      type="button"
-                      class="history-btn"
-                      title="复制文件到剪贴板"
-                      @click="copyExportFile(item.filePath)"
-                    >
-                      复制
-                    </button>
-                    <button
-                      type="button"
-                      class="history-btn"
-                      title="载入此条历史制作参数"
-                      @click="loadHistoryPlan(item)"
-                    >
-                      载入参数
-                    </button>
-                    <button
-                      type="button"
-                      class="history-btn delete-btn"
-                      title="从历史记录删除"
-                      @click="removeHistoryItem(item.id)"
-                    >
-                      ×
-                    </button>
+
+                  <div class="template-card-body">
+                    <div class="template-card-title-row">
+                      <strong class="template-card-name">{{ tpl.name }}</strong>
+                      <span
+                        class="template-badge"
+                        :class="tpl.category === 'custom' ? 'badge-custom' : 'badge-builtin'"
+                      >
+                        {{ tpl.badge }}
+                      </span>
+                    </div>
+                    <p class="template-card-desc">{{ tpl.description }}</p>
+                    <div class="template-card-actions">
+                      <button
+                        type="button"
+                        class="template-apply-btn"
+                        title="将此排版样式一键套用至当前画面"
+                        @click="applyTemplate(tpl)"
+                      >
+                        套用模板 ✦
+                      </button>
+                      <button
+                        v-if="tpl.category === 'custom'"
+                        type="button"
+                        class="template-delete-btn"
+                        title="删除该自定义模板"
+                        @click.stop="handleDeleteTemplate(tpl.id)"
+                      >
+                        🗑
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-            <div v-else class="drawer-empty-state">
-              <div class="empty-icon">✦</div>
-              <strong>暂无导出历史</strong>
-              <span>在此完成的 GIF 将保存在这里，支持一键定位、复制与参数回溯。</span>
-            </div>
+
           </div>
         </div>
       </Transition>
     </main>
+
+    <!-- 存为模板 Modal 对话框 -->
+    <Transition name="modal-fade">
+      <div v-if="isSaveTemplateModalOpen" class="modal-backdrop" @click="isSaveTemplateModalOpen = false">
+        <div class="modal-box" @click.stop>
+          <div class="modal-header">
+            <strong>存为我的排版模板</strong>
+            <button type="button" class="modal-close-btn" @click="isSaveTemplateModalOpen = false">✕</button>
+          </div>
+          <div class="modal-body">
+            <p class="modal-hint">将当前文字的字号、前景色、描边、底框及相对位置保存为模板，可在后续任意视频中一键套用。</p>
+            <div class="modal-preview-row">
+              <span class="modal-preview-label">当前排版效果：</span>
+              <div
+                class="modal-preview-pill"
+                :style="{
+                  color: textColor,
+                  background: textUseBox ? `${textBoxColor}aa` : 'rgba(0,0,0,0.6)',
+                  border: textStrokeWidth > 0 ? `1px solid ${textStrokeColor}` : '1px solid rgba(255,255,255,0.15)',
+                }"
+              >
+                {{ text || '示例台词' }} ({{ textSize }}px)
+              </div>
+            </div>
+            <label class="modal-field">
+              <span>模板名称</span>
+              <input
+                ref="templateNameInputRef"
+                v-model="newTemplateName"
+                type="text"
+                maxlength="20"
+                placeholder="例如：吐槽大白话、影视经典字幕"
+                @keydown.enter="confirmSaveTemplate"
+              />
+            </label>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="secondary-action" @click="isSaveTemplateModalOpen = false">取消</button>
+            <button type="button" class="primary-action" :disabled="!newTemplateName.trim()" @click="confirmSaveTemplate">
+              保存模板
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
