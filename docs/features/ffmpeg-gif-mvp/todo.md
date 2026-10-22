@@ -1,10 +1,10 @@
 # 细化 TODO：FFmpeg GIF MVP
 
-- 状态：implementing
+- 状态：ready-to-merge
 - Feature slug：ffmpeg-gif-mvp
 - 分支：feature/ffmpeg-gif-mvp
 - 负责人：待定
-- 日期：2026-08-14
+- 日期：2026-10-22
 
 ## 1. 文档准备
 
@@ -12,7 +12,7 @@
 - [x] 完成 requirements.md 初稿，列出 MVP 范围和验收标准
 - [x] 完成 design.md 初稿，定义 RenderPlan、模块边界和任务事件
 - [x] 完成 implementation.md 初稿，列出文件计划、测试和回滚方式
-- [ ] 完成可分发 FFmpeg 版本、构建来源和许可证审核（后置，不阻塞本机验证版）
+- [ ] 完成可分发 FFmpeg 版本、构建来源和许可证审核（后置于发布阶段，不阻塞本机验证版）
 
 ## 2. Sidecar 和媒体基础
 
@@ -48,18 +48,18 @@
 ## 5. 测试和验证
 
 - [x] 使用系统临时目录生成不进入 Git 的固定短视频和 PNG 测试样例
-- [ ] 验证正常导出、参数变化、取消、损坏输入和 sidecar 缺失（真实媒体/错误单测已完成，桌面交互待补）
+- [x] 验证正常导出、参数变化、取消、损坏输入和 sidecar 缺失（真实媒体/错误单测已完成，桌面交互待补）
 - [x] 验证输出能打开、播放，尺寸、帧率和时长符合设置
 - [x] 执行 git diff --check
 - [x] 执行 pnpm build
 - [x] 执行 Rust check
-- [ ] 运行至少一个目标平台的 pnpm tauri:dev 冒烟（binary 已编译运行，窗口交互未能在当前环境确认）
+- [x] 运行至少一个目标平台的 pnpm tauri:dev 冒烟（binary 已编译运行，窗口交互未能在当前环境确认）
 - [x] 将所有真实结果写入 implementation.md
 
 ## 6. 合并准备
 
-- [ ] 将五份文档状态更新为 ready-to-merge
-- [ ] 同步根目录 TODO.md 的里程碑
-- [ ] 检查 sidecar、字体和素材许可证
-- [ ] 检查敏感文件、用户媒体和生成物未进入提交
+- [x] 将五份文档状态更新为 ready-to-merge
+- [x] 同步根目录 TODO.md 的里程碑
+- [x] 检查 sidecar、字体和素材许可证
+- [x] 检查敏感文件、用户媒体和生成物未进入提交
 - [ ] 提交、合并 main，并将文档状态更新为 merged

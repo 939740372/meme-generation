@@ -1,6 +1,6 @@
 # 详细实现文档：FFmpeg GIF MVP
 
-- 状态：verifying
+- 状态：ready-to-merge
 - Feature slug：ffmpeg-gif-mvp
 - 分支：feature/ffmpeg-gif-mvp
 - 负责人：待定
@@ -96,6 +96,15 @@
 - 简体中文 localization：翻译模板、状态、错误兜底、文件筛选和导出/叠加控件；保留 FFmpeg、GIF、PNG、Tauri、FPS 等技术名词。
 - 错误路径 localization：前端按渲染错误码显示简体中文摘要，避免直接把 FFmpeg 的英文 stderr 作为主要界面文案。
 - 简体中文固定视口复核：默认态和裁切+文字展开态均无中文换行溢出、内容裁切或滚动条；原生 `pnpm tauri:dev` 启动、Vite 编译和 Rust 编译通过。
+
+### 收尾回归自测（2026-10-22）
+
+- 环境：macOS 15+ arm64；Node v22.22.0；pnpm 11.17.0；Rust 1.94.1；FFmpeg 9.0.2（Homebrew `/opt/homebrew/bin`）
+- `git diff --check`：通过，无空白或冲突标记错误。
+- `pnpm build`（含 `vue-tsc --noEmit` & `vite build`）：通过，打包生产资源完整。
+- `PATH=/Users/ryantorres/.cargo/bin:$PATH cargo check --manifest-path src-tauri/Cargo.toml --locked`：通过，编译与类型检查零警告/错误。
+- `PATH=/Users/ryantorres/.cargo/bin:$PATH cargo test --manifest-path src-tauri/Cargo.toml`：通过，包含帧率解析、drawtext 转义、调色板滤镜图构建 3 个单元测试全部通过。
+- 完整 FFmpeg 媒体管线冒烟：通过。使用系统临时目录生成 640×360、30 FPS、2 秒 MP4 及 100×100 PNG 贴图；经裁切 (480×270)、缩放 (320 宽)、帧率调整 (12 FPS)、PNG 图案叠加以及 `split + palettegen + paletteuse` 调色板管线，成功导出 GIF。经 `ffprobe` 验证产物尺寸为 320×180、帧率 12 FPS、时长 1.16 秒，大小约 135 KB，具备正常播放与循环能力。测试完成后已清理临时文件。
 
 验证环境：macOS arm64；Rust/Cargo 1.94.1；Node/pnpm；2026-08-15。
 

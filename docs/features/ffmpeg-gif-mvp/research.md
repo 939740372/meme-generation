@@ -1,6 +1,6 @@
 # 需求调研：FFmpeg GIF MVP
 
-- 状态：researching
+- 状态：ready-to-merge
 - Feature slug：ffmpeg-gif-mvp
 - 分支：feature/ffmpeg-gif-mvp
 - 负责人：待定
