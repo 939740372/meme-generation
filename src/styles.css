@@ -2628,7 +2628,7 @@ code {
 
 .format-pills {
   display: grid;
-  grid-template-columns: 1fr 1fr 1.25fr;
+  grid-template-columns: 1fr 1fr;
   gap: 6px;
   margin-bottom: 8px;
 }
@@ -2673,6 +2673,13 @@ code {
   box-shadow: 0 0 10px rgba(168, 85, 247, 0.22);
 }
 
+.format-pill.pill-mp4.active {
+  background: rgba(249, 115, 22, 0.1);
+  border-color: #f97316;
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(249, 115, 22, 0.22);
+}
+
 .format-pill-name {
   font-weight: 700;
   font-size: 12.5px;
@@ -2698,6 +2705,53 @@ code {
   background: rgba(168, 85, 247, 0.2);
   color: #d8b4fe;
   border-color: rgba(168, 85, 247, 0.38);
+}
+
+.format-pill-badge.badge-mp4 {
+  background: rgba(249, 115, 22, 0.2);
+  color: #fb923c;
+  border-color: rgba(249, 115, 22, 0.38);
+}
+
+/* MP4 保留原声开关 */
+.audio-switch-row {
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  background: rgba(249, 115, 22, 0.06);
+  border: 1px solid rgba(249, 115, 22, 0.25);
+  border-radius: 4px;
+}
+
+.audio-switch-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.audio-switch-checkbox {
+  accent-color: #f97316;
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.audio-switch-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.audio-switch-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #fb923c;
+}
+
+.audio-switch-sub {
+  font-size: 10px;
+  color: var(--muted);
 }
 
 /* 格式标识徽章 (历史卡片与抽屉) */
@@ -2736,6 +2790,19 @@ code {
   background: rgba(168, 85, 247, 0.18);
   color: #c084fc;
   border: 1px solid rgba(168, 85, 247, 0.4);
+}
+
+.history-format-badge.badge-mp4 {
+  background: rgba(249, 115, 22, 0.18);
+  color: #fb923c;
+  border: 1px solid rgba(249, 115, 22, 0.4);
+}
+
+.history-thumb-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 3px;
 }
 
 /* ==========================================================================
@@ -3658,6 +3725,12 @@ code {
   background: rgba(168, 85, 247, 0.16);
   color: #c084fc;
   border: 1px solid rgba(168, 85, 247, 0.35);
+}
+
+.format-badge.mp4 {
+  background: rgba(249, 115, 22, 0.16);
+  color: #fb923c;
+  border: 1px solid rgba(249, 115, 22, 0.35);
 }
 
 .queue-status-chip {

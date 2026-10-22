@@ -122,6 +122,8 @@ struct RenderPlan {
     format: Option<String>,
     #[serde(default)]
     video_filter: Option<String>,
+    #[serde(default)]
+    include_audio: Option<bool>,
 }
 
 impl RenderPlan {
@@ -141,6 +143,15 @@ impl RenderPlan {
             }
         }
         self.output_path.to_ascii_lowercase().ends_with(".avif")
+    }
+
+    fn is_mp4(&self) -> bool {
+        if let Some(fmt) = &self.format {
+            if fmt.eq_ignore_ascii_case("mp4") {
+                return true;
+            }
+        }
+        self.output_path.to_ascii_lowercase().ends_with(".mp4")
     }
 
     fn active_text_layers(&self) -> Vec<&TextOverlay> {
@@ -522,11 +533,11 @@ fn validate_render_plan(plan: &RenderPlan, media: &MediaInfo) -> CommandResult<(
         .and_then(|extension| extension.to_str())
         .map(|extension| extension.to_ascii_lowercase());
     match ext.as_deref() {
-        Some("gif") | Some("webp") | Some("avif") => {}
+        Some("gif") | Some("webp") | Some("avif") | Some("mp4") => {}
         _ => {
             return Err(app_error(
                 "INVALID_OUTPUT",
-                "输出文件必须使用 .gif、.webp 或 .avif 扩展名。",
+                "输出文件必须使用 .gif、.webp、.avif 或 .mp4 扩展名。",
             ));
         }
     }
@@ -535,6 +546,7 @@ fn validate_render_plan(plan: &RenderPlan, media: &MediaInfo) -> CommandResult<(
         if (fmt_lower == "webp" && ext.as_deref() != Some("webp"))
             || (fmt_lower == "gif" && ext.as_deref() != Some("gif"))
             || (fmt_lower == "avif" && ext.as_deref() != Some("avif"))
+            || (fmt_lower == "mp4" && ext.as_deref() != Some("mp4"))
         {
             return Err(app_error(
                 "INVALID_OUTPUT_FORMAT",
@@ -600,9 +612,10 @@ fn build_filter_graph(plan: &RenderPlan) -> String {
     if let Some(crop) = &plan.crop {
         source.push_str(&format!("crop={}:{}:{}:{},", crop.width, crop.height, crop.x, crop.y));
     }
+    let scale_h = if plan.is_mp4() { -2 } else { -1 };
     source.push_str(&format!(
         "scale={}:{}:flags=lanczos",
-        plan.output_width, -1
+        plan.output_width, scale_h
     ));
     source.push_str(&format!(",fps={}", plan.fps));
 
@@ -656,6 +669,15 @@ fn build_filter_graph(plan: &RenderPlan) -> String {
             format!("[0:v]{}[vout]", source)
         }
     } else if plan.is_avif() {
+        if let Some(image) = &plan.image_overlay {
+            format!(
+                "[0:v]{}[base];[1:v]scale={}:{}:flags=lanczos[sticker];[base][sticker]overlay={}:{}:eof_action=pass,format=yuv420p[vout]",
+                source, image.width, -1, image.x, image.y
+            )
+        } else {
+            format!("[0:v]{},format=yuv420p[vout]", source)
+        }
+    } else if plan.is_mp4() {
         if let Some(image) = &plan.image_overlay {
             format!(
                 "[0:v]{}[base];[1:v]scale={}:{}:flags=lanczos[sticker];[base][sticker]overlay={}:{}:eof_action=pass,format=yuv420p[vout]",
@@ -759,6 +781,59 @@ fn build_ffmpeg_args(plan: &RenderPlan) -> Vec<String> {
             "-an".to_string(),
             plan.output_path.clone(),
         ]);
+    } else if plan.is_mp4() {
+        let crf_val = match plan.quality.as_deref() {
+            Some("low") => "28",
+            Some("high") => "18",
+            _ => "23",
+        };
+        args.extend([
+            "-filter_complex".to_string(),
+            filter_graph,
+            "-map".to_string(),
+            "[vout]".to_string(),
+            "-c:v".to_string(),
+            "libx264".to_string(),
+            "-preset".to_string(),
+            "medium".to_string(),
+            "-crf".to_string(),
+            crf_val.to_string(),
+            "-pix_fmt".to_string(),
+            "yuv420p".to_string(),
+            "-movflags".to_string(),
+            "+faststart".to_string(),
+        ]);
+
+        let include_audio = plan.include_audio.unwrap_or(true);
+        if include_audio {
+            args.extend([
+                "-map".to_string(),
+                "0:a?".to_string(),
+                "-c:a".to_string(),
+                "aac".to_string(),
+                "-b:a".to_string(),
+                "128k".to_string(),
+            ]);
+
+            if let Some(vk) = &plan.video_filter {
+                match vk.trim().to_ascii_lowercase().as_str() {
+                    "fast2x" => {
+                        args.extend(["-af".to_string(), "atempo=2.0".to_string()]);
+                    }
+                    "slow05x" => {
+                        args.extend(["-af".to_string(), "atempo=0.5".to_string()]);
+                    }
+                    "reverse" => {
+                        args.extend(["-af".to_string(), "areverse".to_string()]);
+                    }
+                    _ => {}
+                }
+            }
+        } else {
+            args.push("-an".to_string());
+        }
+
+        args.push(plan.output_path.clone());
     } else {
         args.extend([
             "-filter_complex".to_string(),
@@ -1117,6 +1192,8 @@ fn read_file_as_data_url(path: String) -> CommandResult<String> {
         "image/webp"
     } else if lower.ends_with(".avif") {
         "image/avif"
+    } else if lower.ends_with(".mp4") {
+        "video/mp4"
     } else {
         "image/gif"
     };
@@ -1466,6 +1543,7 @@ mod tests {
             image_overlay: None,
             format: Some("avif".to_string()),
             video_filter: None,
+            include_audio: None,
         };
         let graph = build_filter_graph(&plan);
         assert!(!graph.contains("palettegen"));
@@ -1498,6 +1576,7 @@ mod tests {
             image_overlay: None,
             format: Some("gif".to_string()),
             video_filter: None,
+            include_audio: None,
         };
 
         // 1. Grayscale
@@ -1567,6 +1646,15 @@ mod tests {
         };
         assert!(validate_render_plan(&plan_avif, &media).is_ok());
 
+        let mp4_out = temp_dir.join("test_valid.mp4");
+        let plan_mp4 = RenderPlan {
+            output_path: mp4_out.to_string_lossy().to_string(),
+            format: Some("mp4".to_string()),
+            include_audio: Some(true),
+            ..plan_webp.clone()
+        };
+        assert!(validate_render_plan(&plan_mp4, &media).is_ok());
+
         // 测试格式不匹配
         let mismatch_plan = RenderPlan {
             output_path: avif_out.to_string_lossy().to_string(),
@@ -1574,6 +1662,102 @@ mod tests {
             ..plan_webp.clone()
         };
         assert!(validate_render_plan(&mismatch_plan, &media).is_err());
+    }
+
+    #[test]
+    fn builds_mp4_filter_graph_and_args() {
+        let plan = RenderPlan {
+            input_path: "input.mp4".to_string(),
+            output_path: "output.mp4".to_string(),
+            start_secs: 0.5,
+            end_secs: 2.5,
+            crop: None,
+            output_width: 320,
+            fps: 24,
+            quality: Some("high".to_string()),
+            text_overlay: None,
+            text_layers: None,
+            image_overlay: None,
+            format: Some("mp4".to_string()),
+            video_filter: None,
+            include_audio: Some(true),
+        };
+        let graph = build_filter_graph(&plan);
+        assert!(!graph.contains("palettegen"));
+        assert!(!graph.contains("paletteuse"));
+        assert!(graph.contains("format=yuv420p[vout]"));
+        assert!(graph.contains("scale=320:-2:flags=lanczos"));
+
+        let args = build_ffmpeg_args(&plan);
+        assert!(args.iter().any(|arg| arg == "libx264"));
+        assert!(args.iter().any(|arg| arg == "+faststart"));
+        assert!(args.iter().any(|arg| arg == "-crf"));
+        assert!(args.iter().any(|arg| arg == "18"));
+        assert!(args.iter().any(|arg| arg == "0:a?"));
+        assert!(args.iter().any(|arg| arg == "aac"));
+        assert!(args.iter().any(|arg| arg == "128k"));
+        assert!(!args.iter().any(|arg| arg == "-an"));
+    }
+
+    #[test]
+    fn builds_mp4_args_muted_when_include_audio_false() {
+        let plan = RenderPlan {
+            input_path: "input.mp4".to_string(),
+            output_path: "output.mp4".to_string(),
+            start_secs: 0.0,
+            end_secs: 1.0,
+            crop: None,
+            output_width: 320,
+            fps: 15,
+            quality: None,
+            text_overlay: None,
+            text_layers: None,
+            image_overlay: None,
+            format: Some("mp4".to_string()),
+            video_filter: None,
+            include_audio: Some(false),
+        };
+        let args = build_ffmpeg_args(&plan);
+        assert!(args.iter().any(|arg| arg == "-an"));
+        assert!(!args.iter().any(|arg| arg == "0:a?"));
+        assert!(!args.iter().any(|arg| arg == "aac"));
+    }
+
+    #[test]
+    fn builds_mp4_args_with_audio_filters_when_speed_active() {
+        let mut plan = RenderPlan {
+            input_path: "input.mp4".to_string(),
+            output_path: "output.mp4".to_string(),
+            start_secs: 0.0,
+            end_secs: 2.0,
+            crop: None,
+            output_width: 320,
+            fps: 20,
+            quality: None,
+            text_overlay: None,
+            text_layers: None,
+            image_overlay: None,
+            format: Some("mp4".to_string()),
+            video_filter: Some("fast2x".to_string()),
+            include_audio: Some(true),
+        };
+
+        // 1. fast2x -> atempo=2.0
+        let args1 = build_ffmpeg_args(&plan);
+        let af_pos = args1.iter().position(|a| a == "-af").expect("-af should exist");
+        assert_eq!(args1[af_pos + 1], "atempo=2.0");
+
+        // 2. slow05x -> atempo=0.5
+        plan.video_filter = Some("slow05x".to_string());
+        let args2 = build_ffmpeg_args(&plan);
+        let af_pos2 = args2.iter().position(|a| a == "-af").expect("-af should exist");
+        assert_eq!(args2[af_pos2 + 1], "atempo=0.5");
+
+        // 3. reverse -> areverse
+        plan.video_filter = Some("reverse".to_string());
+        let args3 = build_ffmpeg_args(&plan);
+        let af_pos3 = args3.iter().position(|a| a == "-af").expect("-af should exist");
+        assert_eq!(args3[af_pos3 + 1], "areverse");
     }
 
     #[test]
@@ -1600,6 +1784,18 @@ mod tests {
         assert!(res.is_ok());
         let url = res.unwrap();
         assert!(url.starts_with("data:image/gif;base64,"));
+        let _ = fs::remove_file(test_file);
+    }
+
+    #[test]
+    fn read_file_as_data_url_encodes_mp4_file() {
+        let temp_dir = env::temp_dir();
+        let test_file = temp_dir.join("test_sample.mp4");
+        fs::write(&test_file, b"\x00\x00\x00 ftypisom").unwrap();
+        let res = read_file_as_data_url(test_file.to_string_lossy().to_string());
+        assert!(res.is_ok());
+        let url = res.unwrap();
+        assert!(url.starts_with("data:video/mp4;base64,"));
         let _ = fs::remove_file(test_file);
     }
 
