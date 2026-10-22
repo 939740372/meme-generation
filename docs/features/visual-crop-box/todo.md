@@ -1,6 +1,6 @@
 # 任务拆解：可视化矩形裁切框与画布交互
 
-- 状态：ready-to-merge
+- 状态：merged
 - Feature slug: visual-crop-box
 - 分支：feature/visual-crop-box
 - 负责人：待定
@@ -32,6 +32,6 @@
 - [x] 执行 `git diff --check`
 - [x] 记录自测结果至 `implementation.md`
 - [x] 更新 feature 文档状态为 `ready-to-merge`
-- [ ] 切回 `main` 分支执行非快进合并：`git merge --no-ff feature/visual-crop-box`
-- [ ] 更新 `TODO.md` 并标记 feature 文档为 `merged`
-- [ ] 推送远程仓库
+- [x] 切回 `main` 分支执行非快进合并：`git merge --no-ff feature/visual-crop-box`
+- [x] 更新 `TODO.md` 并标记 feature 文档为 `merged`
+- [x] 推送远程仓库
