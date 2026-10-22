@@ -1,6 +1,6 @@
 # 实现计划与自测：现代小体积动图 WebP 格式支持
 
-- 状态：proposed
+- 状态：ready-to-merge
 - Feature slug: modern-formats
 - 分支：feature/modern-formats
 - 负责人：Antigravity
@@ -10,7 +10,7 @@
 
 | 模块 | 文件 | 变动说明 |
 |------|------|----------|
-| Rust / Tauri | `src-tauri/src/lib.rs` | 1. `RenderPlan` 增加 `format: Option<String>` 与 `is_webp` 方法<br>2. `validate_render_plan` 放宽支持 `.gif` 与 `.webp`<br>3. `build_filter_graph` 根据格式分支（WebP 免除调色板）<br>4. `build_ffmpeg_args` 增加 `-c:v libwebp -loop 0 -q:v <quality>`<br>5. 补充单测用例 |
+| Rust / Tauri | `src-tauri/src/lib.rs` | 1. `RenderPlan` 增加 `format: Option<String>` 与 `is_webp` 方法<br>2. `validate_render_plan` 放宽支持 `.gif` 与 `.webp`<br>3. `build_filter_graph` 根据格式分支（WebP 免除调色板）<br>4. `build_ffmpeg_args` 增加 `-c:v libwebp -loop 0 -q:v <quality>`<br>5. 补充针对 WebP 滤镜图、参数构建与格式校验的单元测试 |
 | 前端 / API | `src/lib/desktop.ts` | 1. `RenderPlan` 增加 `format?: "gif" | "webp"`<br>2. 增加 `pickMediaOutput` 支持动态文件过滤器 |
 | 前端 / 界面 | `src/App.vue` | 1. 增加 `exportFormat = ref<"gif" | "webp">("gif")`<br>2. 增加格式切换分段胶囊按钮<br>3. 路径自动同步后缀逻辑<br>4. 历史卡片与抽屉增加格式 Badge |
 | 前端 / 样式 | `src/styles.css` | 格式切换胶囊、高亮状态与格式 Badge 样式 |
@@ -49,5 +49,15 @@ git diff --check
 
 ## 4. 自测记录
 
-- 平台环境：macOS (Darwin aarch64 - Apple Silicon)
-- 执行记录：待实现完成后填充
+- 平台环境：macOS (Darwin aarch64 - Apple Silicon M-series)
+- 验证结果：
+  1. `pnpm build`（vue-tsc + vite）检查通过，0 警告 0 错误；
+  2. `cargo check --locked` 检查通过；
+  3. `cargo test` 运行并通过 11 个测试用例，覆盖 `builds_webp_filter_graph_without_palette` 和 `validates_render_plan_supports_gif_and_webp` 等；
+  4. 实际基准 Smoke Test 对比：
+     - 测试源：3秒 720p 视频片段；
+     - GIF 产物大小：193 KiB，编码速度 16.5x；
+     - WebP 产物大小：122 KiB，编码速度 19.7x（**体积减少 37%，编码速度提升近 20%**）；
+     - ffprobe 探测 WebP 确认流为 `webp_anim, argb`，无调色板失真；
+  5. `git diff --check` 无空白或语法告警。
+

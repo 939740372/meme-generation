@@ -1,6 +1,6 @@
 # 需求调研：现代小体积动图 WebP 格式支持
 
-- 状态：proposed
+- 状态：ready-to-merge
 - Feature slug: modern-formats
 - 分支：feature/modern-formats
 - 负责人：Antigravity
