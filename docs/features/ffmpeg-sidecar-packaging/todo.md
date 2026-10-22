@@ -1,6 +1,6 @@
 # 细化 TODO：FFmpeg Sidecar 打包与 libfreetype 文字渲染
 
-- 状态：ready-to-merge
+- 状态：merged
 - Feature slug：ffmpeg-sidecar-packaging
 - 分支：feature/ffmpeg-sidecar-packaging
 - 负责人：待定
@@ -38,5 +38,5 @@
 ## 5. 文档与收尾
 
 - [x] 更新文档状态为 `ready-to-merge`
-- [ ] 合并到 `main` 分支并将状态更新为 `merged`
-- [ ] 同步更新根目录 `TODO.md`
+- [x] 合并到 `main` 分支并将状态更新为 `merged`
+- [x] 同步更新根目录 `TODO.md`

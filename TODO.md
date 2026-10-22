@@ -33,8 +33,9 @@
 - [x] 使用调色板流程导出 GIF
 - [x] 显示进度、取消任务、失败原因和输出文件位置
 - [x] 增加端到端冒烟验证用例
-- [ ] 确定跨平台 FFmpeg sidecar 的版本、构建来源与许可证分发策略
-- [ ] 引入包含 libfreetype (drawtext) 的 FFmpeg sidecar 及三平台（macOS/Win/Linux）打包验收
+- [x] 确定跨平台 FFmpeg sidecar 的版本、构建来源与许可证分发策略（详见 docs/features/ffmpeg-sidecar-packaging/）
+- [x] 引入包含 libfreetype (drawtext) 的 FFmpeg sidecar 自动化准备脚本及文字渲染验证
+- [ ] 三平台安装包（DMG/MSI/AppImage）分发与自动更新验收
 
 ### P2：创作工作区
 
