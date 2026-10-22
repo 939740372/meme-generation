@@ -1,6 +1,6 @@
 # 需求说明书：全局滤镜与画面调色 (video-filters)
 
-- 状态：ready-to-merge
+- 状态：merged
 - Feature slug: video-filters
 - 分支：feature/video-filters
 - 负责人：Antigravity

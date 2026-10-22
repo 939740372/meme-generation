@@ -1,6 +1,6 @@
 # 任务拆解：全局滤镜与画面调色 (video-filters)
 
-- 状态：ready-to-merge
+- 状态：merged
 - Feature slug: video-filters
 - 分支：feature/video-filters
 - 负责人：Antigravity
@@ -31,7 +31,7 @@
   - [x] 4.3 运行 `pnpm build`（vue-tsc + vite）检查通过
   - [x] 4.4 运行 `cargo check --locked` 与 `cargo test` 全绿通过（15 个测试通过）
   - [x] 4.5 检查 `git diff --check`
-- [ ] 5. 收尾与主分支合入
+- [x] 5. 收尾与主分支合入
   - [x] 5.1 更新五件套文档状态为 `ready-to-merge` 并记录自测结果
-  - [ ] 5.2 非快进合并至 `main`
-  - [ ] 5.3 文档状态变更为 `merged`，同步根目录 `TODO.md`，推送到远程仓库
+  - [x] 5.2 非快进合并至 `main`
+  - [x] 5.3 文档状态变更为 `merged`，同步根目录 `TODO.md`，推送到远程仓库
