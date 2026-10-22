@@ -56,6 +56,211 @@ const imageX = ref(24);
 const imageY = ref(24);
 const imageWidth = ref(120);
 
+const stageRef = ref<HTMLElement | null>(null);
+const timelineTrackRef = ref<HTMLElement | null>(null);
+const stageSize = reactive({ width: 0, height: 0 });
+const isDraggingText = ref(false);
+const isDraggingImage = ref(false);
+
+const startPercent = computed(() => {
+  const duration = media.value?.durationSecs ?? 0;
+  return duration > 0 ? (startSecs.value / duration) * 100 : 0;
+});
+
+const endPercent = computed(() => {
+  const duration = media.value?.durationSecs ?? 0;
+  return duration > 0 ? (endSecs.value / duration) * 100 : 100;
+});
+
+const rangePercent = computed(() => Math.max(0, endPercent.value - startPercent.value));
+
+const selectedDuration = computed(() => Math.max(0, endSecs.value - startSecs.value));
+const selectedDurationLabel = computed(() => `${selectedDuration.value.toFixed(2)} 秒`);
+
+const textDisplayLeft = computed(() => {
+  if (!media.value || stageSize.width <= 0) return textX.value;
+  return textX.value * (stageSize.width / media.value.width);
+});
+
+const textDisplayTop = computed(() => {
+  if (!media.value || stageSize.height <= 0) return textY.value;
+  return textY.value * (stageSize.height / media.value.height);
+});
+
+const textDisplayFontSize = computed(() => {
+  if (!media.value || stageSize.width <= 0) return textSize.value;
+  return Math.max(12, Math.min(textSize.value * (stageSize.width / media.value.width), 72));
+});
+
+const imageDisplayLeft = computed(() => {
+  if (!media.value || stageSize.width <= 0) return imageX.value;
+  return imageX.value * (stageSize.width / media.value.width);
+});
+
+const imageDisplayTop = computed(() => {
+  if (!media.value || stageSize.height <= 0) return imageY.value;
+  return imageY.value * (stageSize.height / media.value.height);
+});
+
+const imageDisplayWidth = computed(() => {
+  if (!media.value || stageSize.width <= 0) return imageWidth.value;
+  return Math.max(28, imageWidth.value * (stageSize.width / media.value.width));
+});
+
+function updateStageSize(): void {
+  if (stageRef.value) {
+    stageSize.width = stageRef.value.clientWidth;
+    stageSize.height = stageRef.value.clientHeight;
+  }
+}
+
+function startDragStartHandle(event: PointerEvent): void {
+  if (!timelineTrackRef.value || !media.value) return;
+  event.preventDefault();
+  const trackRect = timelineTrackRef.value.getBoundingClientRect();
+  const duration = media.value.durationSecs;
+
+  const onPointerMove = (e: PointerEvent): void => {
+    const offsetX = e.clientX - trackRect.left;
+    const ratio = Math.max(0, Math.min(1, offsetX / trackRect.width));
+    const target = ratio * duration;
+    startSecs.value = Number(Math.max(0, Math.min(endSecs.value - 0.1, target)).toFixed(2));
+  };
+
+  const onPointerUp = (): void => {
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", onPointerUp);
+  };
+
+  window.addEventListener("pointermove", onPointerMove);
+  window.addEventListener("pointerup", onPointerUp);
+}
+
+function startDragEndHandle(event: PointerEvent): void {
+  if (!timelineTrackRef.value || !media.value) return;
+  event.preventDefault();
+  const trackRect = timelineTrackRef.value.getBoundingClientRect();
+  const duration = media.value.durationSecs;
+
+  const onPointerMove = (e: PointerEvent): void => {
+    const offsetX = e.clientX - trackRect.left;
+    const ratio = Math.max(0, Math.min(1, offsetX / trackRect.width));
+    const target = ratio * duration;
+    endSecs.value = Number(Math.min(duration, Math.max(startSecs.value + 0.1, target)).toFixed(2));
+  };
+
+  const onPointerUp = (): void => {
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", onPointerUp);
+  };
+
+  window.addEventListener("pointermove", onPointerMove);
+  window.addEventListener("pointerup", onPointerUp);
+}
+
+function startDragRange(event: PointerEvent): void {
+  if (!timelineTrackRef.value || !media.value) return;
+  event.preventDefault();
+  const trackRect = timelineTrackRef.value.getBoundingClientRect();
+  const duration = media.value.durationSecs;
+  const windowDuration = endSecs.value - startSecs.value;
+  const startClientX = event.clientX;
+  const initStart = startSecs.value;
+
+  const onPointerMove = (e: PointerEvent): void => {
+    const deltaX = e.clientX - startClientX;
+    const deltaSec = (deltaX / trackRect.width) * duration;
+    let newStart = initStart + deltaSec;
+    if (newStart < 0) newStart = 0;
+    if (newStart + windowDuration > duration) newStart = duration - windowDuration;
+    startSecs.value = Number(newStart.toFixed(2));
+    endSecs.value = Number((newStart + windowDuration).toFixed(2));
+  };
+
+  const onPointerUp = (): void => {
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", onPointerUp);
+  };
+
+  window.addEventListener("pointermove", onPointerMove);
+  window.addEventListener("pointerup", onPointerUp);
+}
+
+function onTimelineTrackClick(event: MouseEvent): void {
+  if (!timelineTrackRef.value || !media.value) return;
+  const trackRect = timelineTrackRef.value.getBoundingClientRect();
+  const ratio = Math.max(0, Math.min(1, (event.clientX - trackRect.left) / trackRect.width));
+  const clickSec = ratio * media.value.durationSecs;
+
+  if (Math.abs(clickSec - startSecs.value) < Math.abs(clickSec - endSecs.value)) {
+    startSecs.value = Number(Math.min(endSecs.value - 0.1, Math.max(0, clickSec)).toFixed(2));
+  } else {
+    endSecs.value = Number(Math.max(startSecs.value + 0.1, Math.min(media.value.durationSecs, clickSec)).toFixed(2));
+  }
+}
+
+function startDragText(event: PointerEvent): void {
+  if (!media.value || !stageRef.value) return;
+  event.preventDefault();
+  event.stopPropagation();
+  isDraggingText.value = true;
+  const startClientX = event.clientX;
+  const startClientY = event.clientY;
+  const initX = textX.value;
+  const initY = textY.value;
+  const scaleX = stageRef.value.clientWidth / media.value.width;
+  const scaleY = stageRef.value.clientHeight / media.value.height;
+
+  const onPointerMove = (e: PointerEvent): void => {
+    const deltaX = (e.clientX - startClientX) / scaleX;
+    const deltaY = (e.clientY - startClientY) / scaleY;
+    const newX = Math.round(initX + deltaX);
+    const newY = Math.round(initY + deltaY);
+    textX.value = Math.max(0, Math.min(media.value!.width - 20, newX));
+    textY.value = Math.max(0, Math.min(media.value!.height - 20, newY));
+  };
+
+  const onPointerUp = (): void => {
+    isDraggingText.value = false;
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", onPointerUp);
+  };
+
+  window.addEventListener("pointermove", onPointerMove);
+  window.addEventListener("pointerup", onPointerUp);
+}
+
+function startDragImage(event: PointerEvent): void {
+  if (!media.value || !stageRef.value) return;
+  event.preventDefault();
+  event.stopPropagation();
+  isDraggingImage.value = true;
+  const startClientX = event.clientX;
+  const startClientY = event.clientY;
+  const initX = imageX.value;
+  const initY = imageY.value;
+  const scaleX = stageRef.value.clientWidth / media.value.width;
+  const scaleY = stageRef.value.clientHeight / media.value.height;
+
+  const onPointerMove = (e: PointerEvent): void => {
+    const deltaX = (e.clientX - startClientX) / scaleX;
+    const deltaY = (e.clientY - startClientY) / scaleY;
+    const newX = Math.round(initX + deltaX);
+    const newY = Math.round(initY + deltaY);
+    imageX.value = Math.max(0, Math.min(media.value!.width - 20, newX));
+    imageY.value = Math.max(0, Math.min(media.value!.height - 20, newY));
+  };
+
+  const onPointerUp = (): void => {
+    isDraggingImage.value = false;
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", onPointerUp);
+  };
+
+  window.addEventListener("pointermove", onPointerMove);
+  window.addEventListener("pointerup", onPointerUp);
+}
+
 const isDesktop = computed(() => isDesktopRuntime());
 const isBusy = computed(() => status.value === "probing" || status.value === "rendering");
 const canRender = computed(
@@ -331,10 +536,19 @@ async function connectDesktopEvents(): Promise<void> {
   }
 }
 
+let resizeObserver: ResizeObserver | null = null;
+
 onMounted(async () => {
   try {
     desktopInfo.value = await getDesktopInfo();
     await connectDesktopEvents();
+    if (stageRef.value && typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(() => {
+        updateStageSize();
+      });
+      resizeObserver.observe(stageRef.value);
+      updateStageSize();
+    }
   } catch (error) {
     errorMessage.value = readableError(error);
   }
@@ -342,6 +556,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   stopListening.value?.();
+  resizeObserver?.disconnect();
 });
 </script>
 
@@ -401,19 +616,44 @@ onBeforeUnmount(() => {
               <span class="panel-chip">GIF</span>
             </div>
 
-            <div class="preview-stage" :style="previewStyle">
+            <div ref="stageRef" class="preview-stage" :style="previewStyle">
               <template v-if="media">
                 <div class="preview-art">
                   <div class="preview-grid"></div>
                   <div class="preview-orb orb-a"></div>
                   <div class="preview-orb orb-b"></div>
-                  <div v-if="useText && text" class="preview-text" :style="{ color: textColor, fontSize: `${Math.min(textSize, 54)}px` }">
+                  <div
+                    v-if="useText && text"
+                    class="preview-text interactive-drag"
+                    :class="{ 'is-dragging': isDraggingText }"
+                    :style="{
+                      left: `${textDisplayLeft}px`,
+                      top: `${textDisplayTop}px`,
+                      color: textColor,
+                      fontSize: `${textDisplayFontSize}px`,
+                    }"
+                    title="按住鼠标拖拽文字位置"
+                    @pointerdown="startDragText"
+                  >
+                    <span v-if="isDraggingText" class="drag-handle-pill">X: {{ textX }} Y: {{ textY }}</span>
                     {{ text }}
                   </div>
-                  <div v-if="useImage && imagePath" class="preview-sticker" :style="{ left: `${Math.min(imageX / Math.max(media.width, 1) * 100, 80)}%`, top: `${Math.min(imageY / Math.max(media.height, 1) * 100, 80)}%`, width: `${Math.min(imageWidth / Math.max(media.width, 1) * 100, 42)}%` }">
+                  <div
+                    v-if="useImage && imagePath"
+                    class="preview-sticker interactive-drag"
+                    :class="{ 'is-dragging': isDraggingImage }"
+                    :style="{
+                      left: `${imageDisplayLeft}px`,
+                      top: `${imageDisplayTop}px`,
+                      width: `${imageDisplayWidth}px`,
+                    }"
+                    title="按住鼠标拖拽贴图位置"
+                    @pointerdown="startDragImage"
+                  >
+                    <span v-if="isDraggingImage" class="drag-handle-pill">X: {{ imageX }} Y: {{ imageY }}</span>
                     PNG
                   </div>
-                  <div class="preview-caption">源画面 · {{ media.width }} × {{ media.height }}</div>
+                  <div class="preview-caption">源画面 · {{ media.width }} × {{ media.height }} · 支持画布拖拽排版</div>
                 </div>
                 <div class="play-button" aria-hidden="true">▶</div>
               </template>
@@ -421,6 +661,58 @@ onBeforeUnmount(() => {
                 <div class="empty-mark">✦</div>
                 <strong>暂无视频</strong>
                 <span>导入视频后即可预览。</span>
+              </div>
+            </div>
+
+            <div v-if="media" class="timeline-panel">
+              <div class="timeline-header">
+                <div class="timeline-title">
+                  <span class="timeline-dot"></span>
+                  <strong>时间裁切</strong>
+                  <span class="timeline-badge">{{ selectedDurationLabel }}</span>
+                </div>
+                <div class="timeline-time-display">
+                  <span>{{ startSecs.toFixed(2) }}s</span>
+                  <span class="timeline-sep">至</span>
+                  <span>{{ endSecs.toFixed(2) }}s</span>
+                  <span class="timeline-total">/ {{ mediaDurationLabel }}</span>
+                </div>
+              </div>
+              <div
+                ref="timelineTrackRef"
+                class="timeline-track"
+                title="点击或拖动滑块调整时间范围"
+                @click="onTimelineTrackClick"
+              >
+                <div class="timeline-ticks"></div>
+                <div
+                  class="timeline-selection"
+                  :style="{ left: `${startPercent}%`, width: `${rangePercent}%` }"
+                  title="拖拽可整体平移选区"
+                  @pointerdown.stop="startDragRange"
+                >
+                  <div class="timeline-selection-glow"></div>
+                </div>
+                <div
+                  class="timeline-handle handle-start"
+                  :style="{ left: `${startPercent}%` }"
+                  role="slider"
+                  aria-label="开始时间"
+                  title="拖拽调整开始时间"
+                  @pointerdown.stop="startDragStartHandle"
+                >
+                  <span class="handle-bar"></span>
+                </div>
+                <div
+                  class="timeline-handle handle-end"
+                  :style="{ left: `${endPercent}%` }"
+                  role="slider"
+                  aria-label="结束时间"
+                  title="拖拽调整结束时间"
+                  @pointerdown.stop="startDragEndHandle"
+                >
+                  <span class="handle-bar"></span>
+                </div>
               </div>
             </div>
 
