@@ -1,6 +1,6 @@
 # 需求调研：AVIF 动图格式支持 (avif-format)
 
-- 状态：proposed
+- 状态：ready-to-merge
 - Feature slug: avif-format
 - 分支：feature/avif-format
 - 负责人：Antigravity

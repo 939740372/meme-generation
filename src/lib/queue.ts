@@ -7,12 +7,14 @@ export type QueueItemStatus =
   | "failed"
   | "cancelled";
 
+export type QueueFormat = "gif" | "webp" | "avif";
+
 export interface QueueItem {
   id: string;
   title: string;
   inputFileName: string;
   timeRangeLabel: string;
-  format: "gif" | "webp";
+  format: QueueFormat;
   status: QueueItemStatus;
   progress: number;
   stageMessage: string;
@@ -31,7 +33,7 @@ export function generateQueueOutputPath(
   inputFileName: string,
   startSecs: number,
   endSecs: number,
-  format: "gif" | "webp",
+  format: QueueFormat,
   existingPaths: Set<string>
 ): string {
   const cleanName =
@@ -61,7 +63,8 @@ export function createQueueItem(
   inputFileName: string,
   existingPaths: Set<string>
 ): QueueItem {
-  const format: "gif" | "webp" = plan.format === "webp" ? "webp" : "gif";
+  const format: QueueFormat =
+    plan.format === "avif" ? "avif" : plan.format === "webp" ? "webp" : "gif";
   const startSecs = Number(plan.startSecs) || 0;
   const endSecs = Number(plan.endSecs) || 0;
   const timeRangeLabel = `${startSecs.toFixed(2)}s ~ ${endSecs.toFixed(2)}s`;
