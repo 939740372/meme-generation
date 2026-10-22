@@ -2068,6 +2068,56 @@ fn get_builtin_sfx() -> CommandResult<Vec<BuiltinSfx>> {
     Ok(result)
 }
 
+#[tauri::command]
+fn extract_video_frame(
+    path: String,
+    time_secs: f64,
+    max_width: Option<u32>,
+) -> CommandResult<String> {
+    let p = Path::new(&path);
+    validate_input_file(p)?;
+    if !time_secs.is_finite() || time_secs < 0.0 {
+        return Err(app_error("INVALID_TIME", "截取时间点必须大于等于 0 秒。"));
+    }
+
+    let ffmpeg_bin = resolve_binary("ffmpeg");
+    let limit_w = max_width.unwrap_or(640).clamp(160, 1920);
+    let scale_filter = format!("scale='min({},iw)':-2", limit_w);
+    let time_str = format_secs(time_secs);
+
+    let output = Command::new(&ffmpeg_bin)
+        .args([
+            "-ss",
+            &time_str,
+            "-i",
+            &path,
+            "-frames:v",
+            "1",
+            "-vf",
+            &scale_filter,
+            "-f",
+            "image2pipe",
+            "-vcodec",
+            "mjpeg",
+            "-q:v",
+            "3",
+            "-",
+        ])
+        .output()
+        .map_err(|e| app_error("FFMPEG_SPAWN_ERROR", format!("启动 FFmpeg 抽帧失败: {}", e)))?;
+
+    if !output.status.success() || output.stdout.is_empty() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(app_error(
+            "FRAME_EXTRACT_FAILED",
+            format!("抽帧失败: {}", stderr.lines().last().unwrap_or("未能获取画面帧")),
+        ));
+    }
+
+    let encoded = BASE64.encode(&output.stdout);
+    Ok(format!("data:image/jpeg;base64,{}", encoded))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -2084,7 +2134,8 @@ pub fn run() {
             read_file_as_data_url,
             get_builtin_stickers,
             get_builtin_sfx,
-            get_hardware_acceleration_info
+            get_hardware_acceleration_info,
+            extract_video_frame
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -2955,5 +3006,23 @@ mod tests {
         assert!(graph.contains("borderw=3"));
         assert!(graph.contains("shadowx=6:shadowy=6:shadowcolor=0x222222"));
         assert!(graph.ends_with("[vout]"));
+    }
+
+    #[test]
+    fn extract_video_frame_fails_on_missing_file() {
+        let res = extract_video_frame("/path/not/exist.mp4".to_string(), 0.0, Some(320));
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code, "INPUT_NOT_FOUND");
+    }
+
+    #[test]
+    fn extract_video_frame_fails_on_negative_time() {
+        let temp_dir = env::temp_dir();
+        let test_file = temp_dir.join("test_dummy.mp4");
+        fs::write(&test_file, b"test").unwrap();
+        let res = extract_video_frame(test_file.to_string_lossy().to_string(), -1.0, Some(320));
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code, "INVALID_TIME");
+        let _ = fs::remove_file(test_file);
     }
 }

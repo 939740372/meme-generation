@@ -3,10 +3,12 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import {
   cancelRender,
   copyFileToClipboard,
+  extractVideoFrame,
   getBuiltinSfx,
   getBuiltinStickers,
   getDesktopInfo,
   getHardwareAccelerationInfo,
+  getVideoAssetUrl,
   isDesktopRuntime,
   listenForRenderEvents,
   pickAudioFile,
@@ -341,6 +343,111 @@ const useCrop = ref(false);
 const crop = reactive({ x: 0, y: 0, width: 480, height: 270 });
 const outputWidth = ref(480);
 const fps = ref(12);
+
+// 视频画面与动态循环预览
+const previewVideoRef = ref<HTMLVideoElement | null>(null);
+const videoAssetUrl = ref<string>("");
+const extractedFrameUrl = ref<string>("");
+const isPreviewPlaying = ref<boolean>(false);
+const isPreviewMuted = ref<boolean>(true);
+const isNativeVideoSupported = ref<boolean>(true);
+const isExtractingFrame = ref<boolean>(false);
+let frameExtractTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function refreshExtractedFrame(targetSecs?: number): Promise<void> {
+  if (!inputPath.value || !isDesktop.value) return;
+  const time = targetSecs !== undefined ? targetSecs : startSecs.value;
+  if (isExtractingFrame.value) return;
+  isExtractingFrame.value = true;
+  try {
+    const frame = await extractVideoFrame(inputPath.value, time, 640);
+    if (frame) {
+      extractedFrameUrl.value = frame;
+    }
+  } catch {
+    // ignore
+  } finally {
+    isExtractingFrame.value = false;
+  }
+}
+
+function scheduleFrameRefresh(targetSecs?: number): void {
+  if (frameExtractTimer) clearTimeout(frameExtractTimer);
+  frameExtractTimer = setTimeout(() => {
+    refreshExtractedFrame(targetSecs);
+  }, 100);
+}
+
+function setupVideoPreview(filePath: string): void {
+  if (!filePath) {
+    videoAssetUrl.value = "";
+    extractedFrameUrl.value = "";
+    isPreviewPlaying.value = false;
+    return;
+  }
+  isNativeVideoSupported.value = true;
+  videoAssetUrl.value = getVideoAssetUrl(filePath);
+  refreshExtractedFrame(startSecs.value);
+}
+
+function togglePlayPreview(): void {
+  if (!previewVideoRef.value) {
+    if (!isNativeVideoSupported.value) {
+      showToast("当前格式已启用逐帧高清预览，拖动时间轴即可查看每一帧");
+    }
+    return;
+  }
+  if (isPreviewPlaying.value) {
+    previewVideoRef.value.pause();
+    isPreviewPlaying.value = false;
+  } else {
+    if (previewVideoRef.value.currentTime < startSecs.value || previewVideoRef.value.currentTime >= endSecs.value) {
+      previewVideoRef.value.currentTime = startSecs.value;
+    }
+    if (currentVideoFilter.value === "fast2x") {
+      previewVideoRef.value.playbackRate = 2.0;
+    } else if (currentVideoFilter.value === "slow05x") {
+      previewVideoRef.value.playbackRate = 0.5;
+    } else {
+      previewVideoRef.value.playbackRate = 1.0;
+    }
+    previewVideoRef.value
+      .play()
+      .then(() => {
+        isPreviewPlaying.value = true;
+      })
+      .catch(() => {
+        isPreviewPlaying.value = false;
+      });
+  }
+}
+
+function togglePreviewMute(): void {
+  isPreviewMuted.value = !isPreviewMuted.value;
+}
+
+function handleVideoTimeUpdate(): void {
+  if (!previewVideoRef.value) return;
+  const cur = previewVideoRef.value.currentTime;
+  if (cur >= endSecs.value || cur < startSecs.value - 0.05) {
+    previewVideoRef.value.currentTime = startSecs.value;
+    if (isPreviewPlaying.value) {
+      previewVideoRef.value.play().catch(() => {});
+    }
+  }
+}
+
+function handleVideoLoadedMetadata(): void {
+  if (previewVideoRef.value) {
+    previewVideoRef.value.currentTime = startSecs.value;
+  }
+}
+
+function handleVideoError(): void {
+  isNativeVideoSupported.value = false;
+  isPreviewPlaying.value = false;
+  refreshExtractedFrame(startSecs.value);
+}
 
 export type PresetQuality = "low" | "medium" | "high";
 
@@ -1159,6 +1266,7 @@ async function chooseVideo(): Promise<void> {
     const nextMedia = await probeMedia(selected);
     media.value = nextMedia;
     applyMediaDefaults(nextMedia);
+    setupVideoPreview(selected);
     outputPath.value = defaultOutputPath(selected, exportFormat.value);
     status.value = "ready";
     statusMessage.value = "视频已就绪，可以调整参数并导出。";
@@ -1376,6 +1484,7 @@ async function loadHistoryPlan(record: ExportRecord): Promise<void> {
         const probed = await probeMedia(p.inputPath);
         media.value = probed;
         inputPath.value = p.inputPath;
+        setupVideoPreview(p.inputPath);
       } catch {
         showToast("源视频文件已被移动，已恢复其他参数");
       }
@@ -1595,8 +1704,30 @@ function loadHistoryFromStorage(): void {
 function handleKeydown(e: KeyboardEvent): void {
   if (e.key === "Escape" && isDrawerOpen.value) {
     isDrawerOpen.value = false;
+    return;
+  }
+  if (e.code === "Space") {
+    const active = document.activeElement;
+    if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) {
+      return;
+    }
+    if (media.value) {
+      e.preventDefault();
+      togglePlayPreview();
+    }
   }
 }
+
+watch(startSecs, (newVal) => {
+  if (previewVideoRef.value && !isPreviewPlaying.value) {
+    try {
+      previewVideoRef.value.currentTime = newVal;
+    } catch {
+      // ignore
+    }
+  }
+  scheduleFrameRefresh(newVal);
+});
 
 async function connectDesktopEvents(): Promise<void> {
   if (!isDesktop.value) {
@@ -2061,6 +2192,7 @@ function resetWorkspace(): void {
   media.value = null;
   inputPath.value = "";
   outputPath.value = "";
+  setupVideoPreview("");
   startSecs.value = 0;
   endSecs.value = 3;
   useCrop.value = false;
@@ -2128,6 +2260,7 @@ async function restoreDraftIfAvailable(): Promise<void> {
         const nextMedia = await probeMedia(draft.inputPath);
         media.value = nextMedia;
         inputPath.value = draft.inputPath;
+        setupVideoPreview(draft.inputPath);
         outputPath.value = draft.outputPath || defaultOutputPath(draft.inputPath, draft.format);
         startSecs.value = draft.startSecs;
         endSecs.value = draft.endSecs;
@@ -2501,18 +2634,46 @@ onBeforeUnmount(() => {
             <div class="panel-heading">
               <div>
                 <p class="eyebrow">预览</p>
-                <h2>源画面</h2>
+                <h2>{{ isPreviewPlaying ? "正在循环播放" : "源画面" }}</h2>
               </div>
-              <span class="panel-chip">GIF</span>
+              <div class="preview-heading-tags">
+                <span v-if="media && isNativeVideoSupported" class="panel-chip chip-playback">
+                  {{ isPreviewPlaying ? "循环中 ⟳" : "可播放预览" }}
+                </span>
+                <span v-else-if="media" class="panel-chip chip-scrub">抽帧预览</span>
+                <span class="panel-chip">{{ exportFormat.toUpperCase() }}</span>
+              </div>
             </div>
 
             <div ref="stageRef" class="preview-stage" :style="previewStyle">
               <template v-if="media">
                 <div class="preview-art">
-                  <div class="preview-bg-effects" :style="{ filter: currentVideoFilterCss }">
-                    <div class="preview-grid"></div>
-                    <div class="preview-orb orb-a"></div>
-                    <div class="preview-orb orb-b"></div>
+                  <!-- 视频真实画面层 (带全局滤镜) -->
+                  <div class="preview-media-container" :style="{ filter: currentVideoFilterCss }">
+                    <video
+                      v-if="isNativeVideoSupported && videoAssetUrl"
+                      ref="previewVideoRef"
+                      class="preview-video-element"
+                      :src="videoAssetUrl"
+                      playsinline
+                      :muted="isPreviewMuted"
+                      preload="auto"
+                      @loadedmetadata="handleVideoLoadedMetadata"
+                      @timeupdate="handleVideoTimeUpdate"
+                      @error="handleVideoError"
+                    ></video>
+                    <img
+                      v-else-if="extractedFrameUrl"
+                      class="preview-frame-img"
+                      :src="extractedFrameUrl"
+                      alt="当前视频帧画面"
+                      draggable="false"
+                    />
+                    <div v-else class="preview-bg-effects">
+                      <div class="preview-grid"></div>
+                      <div class="preview-orb orb-a"></div>
+                      <div class="preview-orb orb-b"></div>
+                    </div>
                   </div>
                   <template v-if="useText">
                     <template v-for="layer in textLayers" :key="layer.id">
@@ -2623,12 +2784,55 @@ onBeforeUnmount(() => {
                     {{ useCrop ? `裁切中 · ${crop.width} × ${crop.height} · 可拖拽平移或缩放选区` : `源画面 · ${media.width} × ${media.height} · 支持画布拖拽排版` }}
                   </div>
                 </div>
-                <div class="play-button" aria-hidden="true">▶</div>
+                <!-- 真实可点击的播放控制浮层 (仅在原生支持时可播放) -->
+                <div
+                  v-if="isNativeVideoSupported"
+                  class="preview-play-control"
+                  :class="{ 'is-playing': isPreviewPlaying }"
+                  :title="isPreviewPlaying ? '暂停循环预览 (空格键)' : '开始循环预览所选片段 (空格键)'"
+                  @click="togglePlayPreview"
+                >
+                  <span class="play-control-icon">{{ isPreviewPlaying ? "⏸" : "▶" }}</span>
+                </div>
               </template>
               <div v-else class="preview-empty">
                 <div class="empty-mark">✦</div>
                 <strong>暂无视频</strong>
-                <span>导入视频后即可预览。</span>
+                <span>导入视频后即可在此预览画面和排版。</span>
+              </div>
+            </div>
+
+            <!-- 底部轻量快捷播放工具条 -->
+            <div v-if="media" class="preview-bottom-toolbar">
+              <div class="preview-toolbar-left">
+                <button
+                  type="button"
+                  class="preview-toolbar-btn"
+                  :class="{ 'is-active': isPreviewPlaying }"
+                  :disabled="!isNativeVideoSupported"
+                  :title="isNativeVideoSupported ? '播放/暂停选定片段 (空格键)' : '当前格式仅支持抽帧预览'"
+                  @click="togglePlayPreview"
+                >
+                  {{ isPreviewPlaying ? "⏸ 暂停" : "▶ 播放片段" }}
+                </button>
+                <button
+                  v-if="media.hasAudio && isNativeVideoSupported"
+                  type="button"
+                  class="preview-toolbar-btn btn-mute"
+                  :class="{ 'is-muted': isPreviewMuted }"
+                  :title="isPreviewMuted ? '点击开启原声音频试听' : '点击静音'"
+                  @click="togglePreviewMute"
+                >
+                  {{ isPreviewMuted ? "🔇 静音" : "🔊 原声试听" }}
+                </button>
+                <span class="preview-range-pill">
+                  ⏱ {{ startSecs.toFixed(2) }}s ~ {{ endSecs.toFixed(2) }}s ({{ selectedDurationLabel }})
+                </span>
+              </div>
+              <div class="preview-toolbar-right">
+                <span class="preview-tip-pill" title="空格键可随时切换播放/暂停">
+                  💡 空格键播放
+                </span>
               </div>
             </div>
 
