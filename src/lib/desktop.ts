@@ -47,6 +47,15 @@ export interface ImageOverlay {
   width: number;
 }
 
+export interface BuiltinSticker {
+  id: string;
+  name: string;
+  category: "classic" | "emotion" | "bubble";
+  path: string;
+  dataUrl: string;
+  defaultWidth: number;
+}
+
 export interface RenderPlan {
   inputPath: string;
   outputPath: string;
@@ -264,5 +273,16 @@ export async function readFileAsDataUrl(path: string): Promise<string | null> {
     return await invoke<string>("read_file_as_data_url", { path });
   } catch {
     return null;
+  }
+}
+
+export async function getBuiltinStickers(): Promise<BuiltinSticker[]> {
+  if (!isDesktopRuntime()) {
+    return [];
+  }
+  try {
+    return await invoke<BuiltinSticker[]>("get_builtin_stickers");
+  } catch {
+    return [];
   }
 }

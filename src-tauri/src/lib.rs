@@ -1059,6 +1059,109 @@ fn read_file_as_data_url(path: String) -> CommandResult<String> {
     Ok(format!("data:{};base64,{}", mime, encoded))
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BuiltinSticker {
+    pub id: String,
+    pub name: String,
+    pub category: String,
+    pub path: String,
+    pub data_url: String,
+    pub default_width: u32,
+}
+
+struct StickerDef {
+    id: &'static str,
+    name: &'static str,
+    category: &'static str,
+    filename: &'static str,
+    default_width: u32,
+}
+
+const BUILTIN_STICKERS: &[StickerDef] = &[
+    StickerDef { id: "deal_with_it", name: "暴徒墨镜", category: "classic", filename: "deal_with_it.png", default_width: 140 },
+    StickerDef { id: "red_question", name: "经典问号", category: "classic", filename: "red_question.png", default_width: 90 },
+    StickerDef { id: "confused_questions", name: "连环问号", category: "classic", filename: "confused_questions.png", default_width: 120 },
+    StickerDef { id: "doge_face", name: "旺柴狗头", category: "classic", filename: "doge_face.png", default_width: 120 },
+    StickerDef { id: "panda_face", name: "搞笑熊猫头", category: "classic", filename: "panda_face.png", default_width: 130 },
+    StickerDef { id: "clown_nose", name: "小丑红鼻", category: "classic", filename: "clown_nose.png", default_width: 90 },
+    StickerDef { id: "sweat_smile", name: "流汗黄豆", category: "emotion", filename: "sweat_smile.png", default_width: 120 },
+    StickerDef { id: "approved_stamp", name: "绝赞印章", category: "emotion", filename: "approved_stamp.png", default_width: 130 },
+    StickerDef { id: "rejected_stamp", name: "驳回印章", category: "emotion", filename: "rejected_stamp.png", default_width: 130 },
+    StickerDef { id: "anger_vein", name: "暴青筋", category: "emotion", filename: "anger_vein.png", default_width: 80 },
+    StickerDef { id: "sweat_drop", name: "汗颜汗滴", category: "emotion", filename: "sweat_drop.png", default_width: 70 },
+    StickerDef { id: "sparkle_stars", name: "崇拜闪光", category: "emotion", filename: "sparkle_stars.png", default_width: 100 },
+    StickerDef { id: "heart_eyes", name: "爱心桃心眼", category: "emotion", filename: "heart_eyes.png", default_width: 120 },
+    StickerDef { id: "fire_flame", name: "高能烈火", category: "emotion", filename: "fire_flame.png", default_width: 110 },
+    StickerDef { id: "crying_tears", name: "面条宽泪", category: "emotion", filename: "crying_tears.png", default_width: 120 },
+    StickerDef { id: "thumbs_up", name: "超赞大拇指", category: "emotion", filename: "thumbs_up.png", default_width: 100 },
+    StickerDef { id: "shout_bubble", name: "尖角咆哮气泡", category: "bubble", filename: "shout_bubble.png", default_width: 160 },
+    StickerDef { id: "dots_bubble", name: "无语省略号气泡", category: "bubble", filename: "dots_bubble.png", default_width: 150 },
+];
+
+fn resolve_stickers_dir() -> Option<PathBuf> {
+    if let Ok(val) = env::var("MEME_STUDIO_STICKERS_DIR") {
+        let p = PathBuf::from(val);
+        if p.is_dir() {
+            return Some(p);
+        }
+    }
+
+    if let Ok(current_exe) = env::current_exe() {
+        if let Some(exe_dir) = current_exe.parent() {
+            let prod_candidates = [
+                exe_dir.join("stickers"),
+                exe_dir.join("../Resources/stickers"),
+                exe_dir.join("../Resources"),
+            ];
+            for cand in prod_candidates {
+                if cand.is_dir() && cand.join("deal_with_it.png").exists() {
+                    return Some(cand);
+                }
+            }
+        }
+    }
+
+    let dev_candidates = [
+        PathBuf::from("src-tauri").join("stickers"),
+        PathBuf::from("stickers"),
+        PathBuf::from("..").join("src-tauri").join("stickers"),
+        PathBuf::from("..").join("stickers"),
+    ];
+    for cand in dev_candidates {
+        if cand.is_dir() && cand.join("deal_with_it.png").exists() {
+            return Some(cand);
+        }
+    }
+    None
+}
+
+#[tauri::command]
+fn get_builtin_stickers() -> CommandResult<Vec<BuiltinSticker>> {
+    let dir = resolve_stickers_dir().ok_or_else(|| {
+        app_error("STICKERS_DIR_NOT_FOUND", "找不到内置贴纸素材目录。")
+    })?;
+
+    let mut result = Vec::with_capacity(BUILTIN_STICKERS.len());
+    for def in BUILTIN_STICKERS {
+        let file_path = dir.join(def.filename);
+        if !file_path.exists() {
+            continue;
+        }
+        let path_str = path_to_string(&file_path)?;
+        let data_url = read_file_as_data_url(path_str.clone())?;
+        result.push(BuiltinSticker {
+            id: def.id.to_string(),
+            name: def.name.to_string(),
+            category: def.category.to_string(),
+            path: path_str,
+            data_url,
+            default_width: def.default_width,
+        });
+    }
+    Ok(result)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1072,7 +1175,8 @@ pub fn run() {
             render_gif,
             cancel_render,
             copy_file_to_clipboard,
-            read_file_as_data_url
+            read_file_as_data_url,
+            get_builtin_stickers
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -1348,5 +1452,21 @@ mod tests {
         let res = copy_file_to_clipboard("/path/to/nonexistent/file.gif".to_string());
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().code, "FILE_NOT_FOUND");
+    }
+
+    #[test]
+    fn resolves_stickers_dir_and_loads_builtin_stickers() {
+        let stickers = get_builtin_stickers();
+        assert!(stickers.is_ok(), "get_builtin_stickers should succeed");
+        let list = stickers.unwrap();
+        assert_eq!(list.len(), 18, "Should load all 18 builtin stickers");
+        assert!(list.iter().any(|s| s.id == "deal_with_it"));
+        assert!(list.iter().any(|s| s.id == "doge_face"));
+        assert!(list.iter().any(|s| s.id == "approved_stamp"));
+        for s in &list {
+            assert!(s.data_url.starts_with("data:image/png;base64,"));
+            assert!(Path::new(&s.path).exists());
+            assert!(s.default_width >= 50 && s.default_width <= 200);
+        }
     }
 }

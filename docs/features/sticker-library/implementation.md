@@ -1,6 +1,6 @@
 # 实现计划与自测：内置透明表情贴纸库 (sticker-library)
 
-- 状态：proposed
+- 状态：ready-to-merge
 - Feature slug: sticker-library
 - 分支：feature/sticker-library
 - 负责人：Antigravity
@@ -12,7 +12,7 @@
 |------|------|----------|
 | 贴纸素材资源 | `src-tauri/stickers/*.png` | 18 款标准 RGBA 透明 PNG 贴纸矢量绘制与生成脚本 `scripts/generate-stickers.mjs` |
 | 打包配置 | `src-tauri/tauri.conf.json` | `bundle.resources` 注册 `"stickers/*"` |
-| Rust / Tauri | `src-tauri/src/lib.rs` | 1. 定义 `BuiltinSticker` 数据模型<br>2. 实现 `resolve_stickers_dir` 跨平台路径解析服务<br>3. 实现 `get_builtin_stickers` Tauri command<br>4. 新增 Rust 单元测试 |
+| Rust / Tauri | `src-tauri/src/lib.rs` | 1. 定义 `BuiltinSticker` 数据模型<br>2. 实现 `resolve_stickers_dir` 跨平台路径解析服务<br>3. 实现 `get_builtin_stickers` Tauri command<br>4. 新增 Rust 单元测试 `resolves_stickers_dir_and_loads_builtin_stickers` |
 | 前端 / API | `src/lib/desktop.ts` | 增加 `BuiltinSticker` 接口与 `getBuiltinStickers()` 封装调用 |
 | 前端 / 界面 | `src/App.vue` | 1. 抽屉集成 `stickers` 标签页与分类筛选网格<br>2. 点击贴纸一键置入画布中心<br>3. 画布内贴纸真图预览展示与右下角手柄缩放交互 (`startResizeImage`)<br>4. 侧边栏贴纸快速操作区与尺寸比例调节 |
 | 前端 / 样式 | `src/styles.css` | 贴纸抽屉网格、透明棋盘格背景、缩放手柄 `⤡` 与指示标签样式 |
@@ -59,4 +59,12 @@ git diff --check
 ## 4. 自测记录
 
 - 平台环境：macOS (Darwin aarch64 - Apple Silicon M-series)
-- 执行记录：待实现完成后填充
+- 执行记录：
+  1. `node scripts/test-stickers.mjs`: 18 款贴纸全部校验通过（PNG 签名合法，IHDR 256×256，ColorType=6 RGBA 透明通道完全具备）；
+  2. `pnpm build`: 通过，`vue-tsc` 类型检查无报错，Vite 打包耗时 841ms；
+  3. `PATH=/Users/ryantorres/.cargo/bin:$PATH cargo check --manifest-path src-tauri/Cargo.toml --locked`: 检查通过，lockfile 锁定；
+  4. `PATH=/Users/ryantorres/.cargo/bin:$PATH cargo test --manifest-path src-tauri/Cargo.toml`: 13 个单测全绿通过（含 `resolves_stickers_dir_and_loads_builtin_stickers`）；
+  5. 真实 FFmpeg 贴纸动图合成 Smoke Test：
+     - GIF: overlay `deal_with_it.png` 生成 `/tmp/test_sticker_deal_with_it.gif` (60KB, 18.3x 转码速度)；
+     - WebP: overlay `doge_face.png` 生成 `/tmp/test_sticker_doge.webp` (52KB, 14.9x 转码速度)；
+  6. `git diff --check`: 0 告警，无空白符与格式问题。
