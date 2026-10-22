@@ -1495,3 +1495,87 @@ code {
 .timeline-handle:active .handle-bar {
   background: var(--accent-ink);
 }
+
+/* 导出场景预设按钮组 */
+.section-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+
+.preset-tag-info {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent);
+  background: rgba(215, 244, 106, 0.1);
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid rgba(215, 244, 106, 0.2);
+}
+
+.preset-pills {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  margin-bottom: 7px;
+}
+
+.preset-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 2px;
+  background: #141920;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: #c7d2dc;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.preset-pill:hover {
+  background: #1b222c;
+  border-color: rgba(215, 244, 106, 0.4);
+  color: #fff;
+}
+
+.preset-pill.active {
+  background: rgba(215, 244, 106, 0.16);
+  border-color: var(--accent);
+  color: #fff;
+  box-shadow: 0 0 8px rgba(215, 244, 106, 0.18);
+}
+
+.preset-name {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.preset-badge {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--muted);
+  line-height: 1.2;
+}
+
+.preset-pill.active .preset-badge {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.preset-summary-badge {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent);
+  background: rgba(215, 244, 106, 0.1);
+  padding: 3px 8px;
+  border-radius: 3px;
+  border: 1px solid rgba(215, 244, 106, 0.25);
+  margin-right: 8px;
+  white-space: nowrap;
+}
