@@ -401,8 +401,6 @@ fn probe_media(path: &Path) -> CommandResult<MediaInfo> {
         .args([
             "-v",
             "error",
-            "-select_streams",
-            "v:0",
             "-show_entries",
             "stream=codec_type,width,height,avg_frame_rate,duration:format=format_name,duration",
             "-of",
@@ -430,11 +428,19 @@ fn probe_media(path: &Path) -> CommandResult<MediaInfo> {
 
     let document: Value = serde_json::from_slice(&output.stdout)
         .map_err(|_| app_error("MEDIA_PROBE_INVALID", "ffprobe 返回了无法解析的媒体信息。"))?;
-    let stream = document
+    let streams = document
         .get("streams")
         .and_then(Value::as_array)
-        .and_then(|streams| streams.first())
         .ok_or_else(|| app_error("NO_VIDEO_STREAM", "输入文件没有可用的视频流。"))?;
+
+    let stream = streams
+        .iter()
+        .find(|s| s.get("codec_type").and_then(Value::as_str) == Some("video"))
+        .ok_or_else(|| app_error("NO_VIDEO_STREAM", "输入文件没有可用的视频流。"))?;
+
+    let has_audio = streams
+        .iter()
+        .any(|s| s.get("codec_type").and_then(Value::as_str) == Some("audio"));
 
     let width = stream
         .get("width")
@@ -471,8 +477,6 @@ fn probe_media(path: &Path) -> CommandResult<MediaInfo> {
         .and_then(|name| name.to_str())
         .unwrap_or("video")
         .to_string();
-
-    let has_audio = check_has_audio_stream(&ffprobe_bin, &path_string);
 
     Ok(MediaInfo {
         path: path_string,
@@ -637,6 +641,23 @@ fn validate_render_plan(plan: &RenderPlan, media: &MediaInfo) -> CommandResult<(
         }
     }
 
+    if let Some(bgm) = &plan.bgm_overlay {
+        if !bgm.path.trim().is_empty() {
+            let bgm_path = Path::new(&bgm.path);
+            validate_input_file(bgm_path)?;
+            if let Some(vol) = bgm.volume {
+                if !vol.is_finite() || !(0.0..=10.0).contains(&vol) {
+                    return Err(app_error("INVALID_BGM_VOLUME", "背景音乐音量必须在 0 到 1000% 之间。"));
+                }
+            }
+            if let Some(orig_vol) = bgm.orig_volume {
+                if !orig_vol.is_finite() || !(0.0..=10.0).contains(&orig_vol) {
+                    return Err(app_error("INVALID_ORIG_VOLUME", "原声音量必须在 0 到 1000% 之间。"));
+                }
+            }
+        }
+    }
+
     let output_path = Path::new(&plan.output_path);
     let ext = output_path
         .extension()
@@ -683,17 +704,19 @@ fn format_secs(value: f64) -> String {
 }
 
 fn escape_drawtext(value: &str) -> String {
-    value
-        .chars()
-        .map(|character| match character {
-            '\\' => "\\\\".to_string(),
-            '\'' => "\\\\'".to_string(),
-            ':' => "\\:".to_string(),
-            ',' => "\\,".to_string(),
-            '%' => "\\%".to_string(),
-            other => other.to_string(),
-        })
-        .collect()
+    let mut out = String::with_capacity(value.len() + 16);
+    for character in value.chars() {
+        match character {
+            '\\' => out.push_str("\\\\"),
+            '\'' => out.push_str("'\\''"),
+            ':' => out.push_str("\\:"),
+            ',' => out.push_str("\\,"),
+            '%' => out.push_str("\\%"),
+            '\r' => {}
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 fn color_for_filter(value: &str) -> String {
@@ -726,7 +749,7 @@ fn build_filter_graph(plan: &RenderPlan) -> String {
         if let Some(crop) = &plan.crop {
             source.push_str(&format!("crop={}:{}:{}:{},", crop.width, crop.height, crop.x, crop.y));
         }
-        let scale_h = if plan.is_mp4() { -2 } else { -1 };
+        let scale_h = if plan.is_mp4() || plan.is_avif() { -2 } else { -1 };
         source.push_str(&format!(
             "scale={}:{}:flags=lanczos",
             plan.output_width, scale_h
@@ -842,7 +865,7 @@ fn build_filter_graph(plan: &RenderPlan) -> String {
         if let Some(crop) = &plan.crop {
             base_source.push_str(&format!("crop={}:{}:{}:{},", crop.width, crop.height, crop.x, crop.y));
         }
-        let scale_h = if plan.is_mp4() { -2 } else { -1 };
+        let scale_h = if plan.is_mp4() || plan.is_avif() { -2 } else { -1 };
         base_source.push_str(&format!(
             "scale={}:{}:flags=lanczos",
             plan.output_width, scale_h
@@ -915,8 +938,8 @@ fn build_filter_graph(plan: &RenderPlan) -> String {
                 // Rotated and/or sheared single layer
                 let est_w = (text.text.chars().map(|c| if c.is_ascii() { 0.6 } else { 1.0 }).sum::<f64>() * text.size as f64).round() as u32;
                 let est_h = text.size;
-                let pad_w = (est_w * 2 + 120).max(200);
-                let pad_h = (est_h * 3 + 120).max(120);
+                let pad_w = ((est_w * 2 + 120).max(200) + 1) & !1;
+                let pad_h = ((est_h * 3 + 120).max(120) + 1) & !1;
 
                 let mut drawtext_parts = Vec::new();
                 if let Some(fontfile) = &fontfile_opt {
@@ -999,8 +1022,8 @@ fn build_filter_graph(plan: &RenderPlan) -> String {
 
                 if n <= 1 {
                     // Single char: render rotated
-                    let pad_w = (est_w * 2 + 120).max(200);
-                    let pad_h = (est_h * 3 + 120).max(120);
+                    let pad_w = ((est_w * 2 + 120).max(200) + 1) & !1;
+                    let pad_h = ((est_h * 3 + 120).max(120) + 1) & !1;
 
                     let mut drawtext_parts = Vec::new();
                     if let Some(fontfile) = &fontfile_opt {
@@ -1069,7 +1092,7 @@ fn build_filter_graph(plan: &RenderPlan) -> String {
                     ));
                     current_stream = next_stream;
                 } else {
-                    let char_pad_size = (text.size * 2 + 40).max(64);
+                    let char_pad_size = ((text.size * 2 + 40).max(64) + 1) & !1;
                     let max_angle_span = 70.0 * (arc as f64 / 100.0);
                     let arc_amplitude = (arc as f64 / 100.0) * 0.22 * est_w as f64;
 
@@ -1556,14 +1579,23 @@ fn run_render(
     output_path: PathBuf,
     duration_secs: f64,
 ) {
+    let format_label = match output_path.extension().and_then(|e| e.to_str()).map(|s| s.to_ascii_lowercase()).as_deref() {
+        Some("mp4") => "MP4 短视频",
+        Some("webp") => "WebP 动图",
+        Some("avif") => "AVIF 动图",
+        _ => "GIF 动图",
+    };
+    let rendering_msg = format!("正在编码 {}…", format_label);
+
     let progress_task = stdout.map(|stdout| {
         let app = app.clone();
         let task_id = task_id.clone();
+        let msg = rendering_msg.clone();
         thread::spawn(move || {
             for line in BufReader::new(stdout).lines().map_while(Result::ok) {
                 if let Some(seconds) = progress_seconds(&line) {
                     let progress = 6.0 + ((seconds / duration_secs).clamp(0.0, 1.0) as f32 * 88.0);
-                    emit_progress(&app, &task_id, "rendering", progress, "正在编码 GIF…");
+                    emit_progress(&app, &task_id, "rendering", progress, &msg);
                 } else if line == "progress=end" {
                     emit_progress(&app, &task_id, "finalizing", 96.0, "正在验证输出…");
                 }
@@ -2071,6 +2103,7 @@ mod tests {
     #[test]
     fn escapes_drawtext_filter_delimiters() {
         assert_eq!(escape_drawtext("a:b, 100%"), "a\\:b\\, 100\\%");
+        assert_eq!(escape_drawtext("it's"), "it'\\''s");
     }
 
     #[test]

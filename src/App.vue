@@ -90,6 +90,7 @@ const bgmVolume = ref(100);
 const origAudioVolume = ref(100);
 const playingSfxId = ref<string | null>(null);
 const isPlayingActiveBgm = ref(false);
+const localBgmDataUrl = ref<string>("");
 let sfxAudioPlayer: HTMLAudioElement | null = null;
 
 const filteredSfxList = computed(() => {
@@ -155,7 +156,7 @@ function togglePlaySfx(sfx: BuiltinSfx): void {
   };
 }
 
-function togglePlayActiveBgm(): void {
+async function togglePlayActiveBgm(): Promise<void> {
   if (isPlayingActiveBgm.value) {
     if (sfxAudioPlayer) {
       sfxAudioPlayer.pause();
@@ -170,11 +171,25 @@ function togglePlayActiveBgm(): void {
   }
   playingSfxId.value = null;
   const matched = builtinSfxList.value.find((s) => s.path === bgmPath.value);
-  const src = matched ? matched.dataUrl : bgmPath.value;
+  let src = matched ? matched.dataUrl : localBgmDataUrl.value;
+  if (!src && bgmPath.value) {
+    try {
+      src = (await readFileAsDataUrl(bgmPath.value)) || "";
+      localBgmDataUrl.value = src;
+    } catch {
+      src = "";
+    }
+  }
+  if (!src) {
+    showToast("无法读取音频试听");
+    return;
+  }
   sfxAudioPlayer = new Audio(src);
   sfxAudioPlayer.volume = Math.min(1.0, bgmVolume.value / 100);
   isPlayingActiveBgm.value = true;
-  sfxAudioPlayer.play().catch(() => {});
+  sfxAudioPlayer.play().catch(() => {
+    isPlayingActiveBgm.value = false;
+  });
   sfxAudioPlayer.onended = () => {
     isPlayingActiveBgm.value = false;
   };
@@ -188,6 +203,7 @@ function applySfx(sfx: BuiltinSfx): void {
   bgmPath.value = sfx.path;
   bgmName.value = sfx.name;
   bgmDuration.value = sfx.duration;
+  localBgmDataUrl.value = sfx.dataUrl;
   showToast(`已选用音效：${sfx.name}`);
 }
 
@@ -202,6 +218,9 @@ async function handlePickAudio(): Promise<void> {
     const slashIdx = Math.max(file.lastIndexOf("/"), file.lastIndexOf("\\"));
     bgmName.value = slashIdx >= 0 ? file.slice(slashIdx + 1) : file;
     bgmDuration.value = 0;
+    readFileAsDataUrl(file).then((dataUrl) => {
+      if (dataUrl) localBgmDataUrl.value = dataUrl;
+    }).catch(() => {});
     showToast(`已选用自定义音频：${bgmName.value}`);
   }
 }
@@ -210,6 +229,7 @@ function clearBgm(): void {
   bgmPath.value = "";
   bgmName.value = "";
   bgmDuration.value = 0;
+  localBgmDataUrl.value = "";
   if (sfxAudioPlayer) {
     sfxAudioPlayer.pause();
   }
@@ -1910,6 +1930,11 @@ function confirmSaveTemplate(): void {
       boxColor: textBoxColor.value,
       boxOpacity: Number(textBoxOpacity.value),
       positionRatio: { x: xRatio, y: yRatio },
+      rotation: Number(textRotation.value || 0),
+      arcRadius: Number(textArcRadius.value || 0),
+      isItalic: Boolean(textIsItalic.value),
+      shadowOffset: Number(textShadowOffset.value || 0),
+      shadowColor: textShadowColor.value || "#000000",
     },
     suggestedPresetId: selectedPresetId.value !== "custom" ? selectedPresetId.value : undefined,
     suggestedFormat: exportFormat.value,
@@ -1938,6 +1963,11 @@ function applyTemplate(tpl: MemeTemplate): void {
   textUseBox.value = tpl.textStyle.useBox;
   textBoxColor.value = tpl.textStyle.boxColor;
   textBoxOpacity.value = tpl.textStyle.boxOpacity;
+  textRotation.value = tpl.textStyle.rotation ?? 0;
+  textArcRadius.value = tpl.textStyle.arcRadius ?? 0;
+  textIsItalic.value = Boolean(tpl.textStyle.isItalic);
+  textShadowOffset.value = tpl.textStyle.shadowOffset ?? 0;
+  textShadowColor.value = tpl.textStyle.shadowColor ?? "#000000";
 
   if (media.value) {
     textX.value = Math.max(0, Math.round(media.value.width * tpl.textStyle.positionRatio.x));
@@ -1989,6 +2019,11 @@ function buildCurrentDraft(): StudioDraft {
     textUseBox: Boolean(textUseBox.value),
     textBoxColor: textBoxColor.value,
     textBoxOpacity: Number(textBoxOpacity.value),
+    textRotation: Number(textRotation.value || 0),
+    textArcRadius: Number(textArcRadius.value || 0),
+    textIsItalic: Boolean(textIsItalic.value),
+    textShadowOffset: Number(textShadowOffset.value || 0),
+    textShadowColor: textShadowColor.value,
     textLayers: JSON.parse(JSON.stringify(textLayers.value)),
     activeLayerId: activeLayerId.value,
     useImage: useImage.value,
@@ -2126,7 +2161,14 @@ async function restoreDraftIfAvailable(): Promise<void> {
         selectedPresetId.value = draft.selectedPresetId;
         useText.value = draft.useText;
         if (draft.textLayers && draft.textLayers.length > 0) {
-          textLayers.value = draft.textLayers;
+          textLayers.value = draft.textLayers.map((l) => ({
+            ...l,
+            rotation: l.rotation ?? 0,
+            arcRadius: l.arcRadius ?? 0,
+            isItalic: Boolean(l.isItalic),
+            shadowOffset: l.shadowOffset ?? 0,
+            shadowColor: l.shadowColor ?? "#000000",
+          }));
           activeLayerId.value = draft.activeLayerId || draft.textLayers[0].id;
         } else if (draft.text) {
           textLayers.value = [
@@ -2143,6 +2185,11 @@ async function restoreDraftIfAvailable(): Promise<void> {
               boxColor: draft.textBoxColor ?? "#000000",
               boxOpacity: draft.textBoxOpacity ?? 0.6,
               visible: true,
+              rotation: draft.textRotation ?? 0,
+              arcRadius: draft.textArcRadius ?? 0,
+              isItalic: Boolean(draft.textIsItalic),
+              shadowOffset: draft.textShadowOffset ?? 0,
+              shadowColor: draft.textShadowColor ?? "#000000",
             },
           ];
           activeLayerId.value = "layer-1";
@@ -2164,7 +2211,14 @@ async function restoreDraftIfAvailable(): Promise<void> {
         errorMessage.value = "上次编辑的视频文件已移动或无法访问，已恢复排版参数。";
         useText.value = draft.useText;
         if (draft.textLayers && draft.textLayers.length > 0) {
-          textLayers.value = draft.textLayers;
+          textLayers.value = draft.textLayers.map((l) => ({
+            ...l,
+            rotation: l.rotation ?? 0,
+            arcRadius: l.arcRadius ?? 0,
+            isItalic: Boolean(l.isItalic),
+            shadowOffset: l.shadowOffset ?? 0,
+            shadowColor: l.shadowColor ?? "#000000",
+          }));
           activeLayerId.value = draft.activeLayerId || draft.textLayers[0].id;
         } else if (draft.text) {
           textLayers.value = [
@@ -2181,6 +2235,11 @@ async function restoreDraftIfAvailable(): Promise<void> {
               boxColor: draft.textBoxColor ?? "#000000",
               boxOpacity: draft.textBoxOpacity ?? 0.6,
               visible: true,
+              rotation: draft.textRotation ?? 0,
+              arcRadius: draft.textArcRadius ?? 0,
+              isItalic: Boolean(draft.textIsItalic),
+              shadowOffset: draft.textShadowOffset ?? 0,
+              shadowColor: draft.textShadowColor ?? "#000000",
             },
           ];
           activeLayerId.value = "layer-1";
@@ -2209,6 +2268,7 @@ watch(
     exportFormat,
     includeAudio,
     hwAccelPolicy,
+    currentVideoFilter,
     selectedPresetId,
     useText,
     text,
