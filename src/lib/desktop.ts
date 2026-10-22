@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir as openerRevealItemInDir } from "@tauri-apps/plugin-opener";
@@ -375,5 +375,35 @@ export async function getHardwareAccelerationInfo(): Promise<HardwareAcceleratio
       encoder: "libx264",
       description: "探测失败，自动使用 CPU 软件压制",
     };
+  }
+}
+
+export async function extractVideoFrame(
+  path: string,
+  timeSecs: number,
+  maxWidth?: number
+): Promise<string> {
+  if (!isDesktopRuntime() || !path) {
+    return "";
+  }
+  try {
+    return await invoke<string>("extract_video_frame", {
+      path,
+      timeSecs,
+      maxWidth,
+    });
+  } catch {
+    return "";
+  }
+}
+
+export function getVideoAssetUrl(filePath: string): string {
+  if (!filePath || !isDesktopRuntime()) {
+    return "";
+  }
+  try {
+    return convertFileSrc(filePath);
+  } catch {
+    return "";
   }
 }
