@@ -685,9 +685,6 @@ fn validate_render_plan(plan: &RenderPlan, media: &MediaInfo) -> CommandResult<(
             ));
         }
     }
-    if output_path.exists() {
-        return Err(app_error("OUTPUT_EXISTS", "输出文件已存在，请选择另一个路径。"));
-    }
     let parent = output_path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
@@ -697,6 +694,59 @@ fn validate_render_plan(plan: &RenderPlan, media: &MediaInfo) -> CommandResult<(
     }
 
     Ok(())
+}
+
+fn parse_numbered_stem(stem: &str) -> Option<(String, usize)> {
+    if !stem.ends_with(')') {
+        return None;
+    }
+    let open_paren = stem.rfind(" (")?;
+    let inner_num_str = &stem[open_paren + 2..stem.len() - 1];
+    let num = inner_num_str.parse::<usize>().ok()?;
+    if num == 0 {
+        return None;
+    }
+    let base_stem = stem[..open_paren].to_string();
+    Some((base_stem, num + 1))
+}
+
+pub fn resolve_unique_output_path(target: &Path) -> PathBuf {
+    if !target.exists() {
+        return target.to_path_buf();
+    }
+
+    let parent = target.parent().unwrap_or_else(|| Path::new(""));
+    let ext = target.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let stem = target.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
+
+    let (base_stem, start_num) = if let Some(caps) = parse_numbered_stem(stem) {
+        caps
+    } else {
+        (stem.to_string(), 1)
+    };
+
+    let mut counter = start_num;
+    while counter < 10000 {
+        let new_file_name = if ext.is_empty() {
+            format!("{} ({})", base_stem, counter)
+        } else {
+            format!("{} ({}).{}", base_stem, counter, ext)
+        };
+
+        let candidate = if parent.as_os_str().is_empty() {
+            PathBuf::from(new_file_name)
+        } else {
+            parent.join(new_file_name)
+        };
+
+        if !candidate.exists() {
+            return candidate;
+        }
+
+        counter += 1;
+    }
+
+    target.to_path_buf()
 }
 
 fn format_secs(value: f64) -> String {
@@ -1717,9 +1767,12 @@ fn run_render(
 fn render_gif(
     app: AppHandle,
     state: State<'_, RenderState>,
-    plan: RenderPlan,
+    mut plan: RenderPlan,
 ) -> CommandResult<String> {
     let media = probe_media(Path::new(&plan.input_path))?;
+    plan.output_path = resolve_unique_output_path(Path::new(&plan.output_path))
+        .to_string_lossy()
+        .to_string();
     validate_render_plan(&plan, &media)?;
     if plan.text_overlay.is_some() && ffmpeg_supports_filter("drawtext") == Some(false) {
         return Err(app_error(
@@ -3024,5 +3077,43 @@ mod tests {
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().code, "INVALID_TIME");
         let _ = fs::remove_file(test_file);
+    }
+
+    #[test]
+    fn parses_numbered_stem_correctly() {
+        assert_eq!(parse_numbered_stem("output"), None);
+        assert_eq!(parse_numbered_stem("output()"), None);
+        assert_eq!(parse_numbered_stem("output (0)"), None);
+        assert_eq!(parse_numbered_stem("output (abc)"), None);
+        assert_eq!(parse_numbered_stem("output (1)"), Some(("output".to_string(), 2)));
+        assert_eq!(parse_numbered_stem("my meme (5)"), Some(("my meme".to_string(), 6)));
+        assert_eq!(parse_numbered_stem("nested (meme) (2)"), Some(("nested (meme)".to_string(), 3)));
+    }
+
+    #[test]
+    fn resolves_unique_output_path_without_overwrite() {
+        let temp_dir = env::temp_dir().join(format!("meme_test_unique_{}", task_id()));
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let base_file = temp_dir.join("meme.gif");
+        // 1. File doesn't exist yet -> returns base_file directly
+        let res1 = resolve_unique_output_path(&base_file);
+        assert_eq!(res1, base_file);
+
+        // 2. Create base_file -> resolves to "meme (1).gif"
+        fs::write(&base_file, b"data 0").unwrap();
+        let res2 = resolve_unique_output_path(&base_file);
+        assert_eq!(res2, temp_dir.join("meme (1).gif"));
+
+        // 3. Create "meme (1).gif" -> resolves to "meme (2).gif"
+        fs::write(&res2, b"data 1").unwrap();
+        let res3 = resolve_unique_output_path(&base_file);
+        assert_eq!(res3, temp_dir.join("meme (2).gif"));
+
+        // 4. Starting from already-numbered file "meme (1).gif" when it exists -> resolves to "meme (2).gif"
+        let res4 = resolve_unique_output_path(&temp_dir.join("meme (1).gif"));
+        assert_eq!(res4, temp_dir.join("meme (2).gif"));
+
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 }
