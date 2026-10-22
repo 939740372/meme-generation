@@ -1,6 +1,6 @@
 # 任务清单：同名导出自动顺延序号不覆盖 (auto-numbered-export)
 
-- 状态：ready-to-merge
+- 状态：merged
 - Feature slug：auto-numbered-export
 - 分支：feature/auto-numbered-export
 - 负责人：Meme Studio Team
@@ -23,6 +23,6 @@
   - [x] 运行 `node scripts/test-queue.mjs` 测试通过
   - [x] 运行 `pnpm build` 构建通过
   - [x] `git diff --check` 无违规
-- [ ] **5. 合并与交付**
+- [x] **5. 合并与交付**
   - [x] 更新 `implementation.md` 自测记录
-  - [ ] 提交代码并合并回 `main`
+  - [x] 提交代码并合并回 `main`

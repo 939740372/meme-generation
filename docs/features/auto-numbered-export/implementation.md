@@ -1,6 +1,6 @@
 # 实现计划与交付记录：同名导出自动顺延序号不覆盖 (auto-numbered-export)
 
-- 状态：ready-to-merge
+- 状态：merged
 - Feature slug：auto-numbered-export
 - 分支：feature/auto-numbered-export
 - 负责人：Meme Studio Team
