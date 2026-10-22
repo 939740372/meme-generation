@@ -28,7 +28,10 @@ assert.equal(pWebp, "/tmp/output/funny_cat_0.0s-2.0s.webp");
 const pAvif = generateQueueOutputPath("/tmp/output", "funny cat.mp4", 0.0, 2.0, "avif", existing);
 assert.equal(pAvif, "/tmp/output/funny_cat_0.0s-2.0s.avif");
 
-console.log("✓ Path generation & deduplication verified (GIF, WebP, AVIF).");
+const pMp4 = generateQueueOutputPath("/tmp/output", "funny cat.mp4", 0.0, 2.0, "mp4", existing);
+assert.equal(pMp4, "/tmp/output/funny_cat_0.0s-2.0s.mp4");
+
+console.log("✓ Path generation & deduplication verified (GIF, WebP, AVIF, MP4).");
 
 console.log("--- Testing createQueueItem ---");
 const mockPlan = {
@@ -64,6 +67,16 @@ assert.equal(item1.plan.videoFilter, "grayscale");
 const item2 = createQueueItem(mockPlan, "video.mp4", queueExisting);
 assert.notEqual(item1.id, item2.id);
 assert.equal(item2.outputPath, "/Users/test/video_2.5s-4.8s_(1).gif");
+
+const mp4Plan = {
+  ...mockPlan,
+  format: "mp4",
+  includeAudio: true,
+};
+const itemMp4 = createQueueItem(mp4Plan, "video.mp4", queueExisting);
+assert.equal(itemMp4.format, "mp4");
+assert.equal(itemMp4.outputPath, "/Users/test/video_2.5s-4.8s.mp4");
+assert.equal(itemMp4.plan.includeAudio, true);
 
 console.log("✓ Queue item creation & immutability verified.");
 

@@ -7,7 +7,7 @@ export type QueueItemStatus =
   | "failed"
   | "cancelled";
 
-export type QueueFormat = "gif" | "webp" | "avif";
+export type QueueFormat = "gif" | "webp" | "avif" | "mp4";
 
 export interface QueueItem {
   id: string;
@@ -64,7 +64,7 @@ export function createQueueItem(
   existingPaths: Set<string>
 ): QueueItem {
   const format: QueueFormat =
-    plan.format === "avif" ? "avif" : plan.format === "webp" ? "webp" : "gif";
+    plan.format === "mp4" ? "mp4" : plan.format === "avif" ? "avif" : plan.format === "webp" ? "webp" : "gif";
   const startSecs = Number(plan.startSecs) || 0;
   const endSecs = Number(plan.endSecs) || 0;
   const timeRangeLabel = `${startSecs.toFixed(2)}s ~ ${endSecs.toFixed(2)}s`;

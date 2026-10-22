@@ -56,6 +56,8 @@ export interface BuiltinSticker {
   defaultWidth: number;
 }
 
+export type ExportFormat = "gif" | "webp" | "avif" | "mp4";
+
 export interface RenderPlan {
   inputPath: string;
   outputPath: string;
@@ -68,8 +70,9 @@ export interface RenderPlan {
   textOverlay: TextOverlay | null;
   textLayers?: TextOverlay[] | null;
   imageOverlay: ImageOverlay | null;
-  format?: "gif" | "webp" | "avif";
+  format?: ExportFormat;
   videoFilter?: string;
+  includeAudio?: boolean;
 }
 
 export interface ExportRecord {
@@ -175,14 +178,15 @@ export async function pickGifOutput(defaultPath?: string): Promise<string | null
 
 export async function pickMediaOutput(
   defaultPath?: string,
-  format: "gif" | "webp" | "avif" = "gif",
+  format: ExportFormat = "gif",
 ): Promise<string | null> {
   requireDesktopRuntime();
 
-  const filterMap = {
+  const filterMap: Record<ExportFormat, { name: string; extensions: string[] }> = {
     gif: { name: "GIF 经典动图", extensions: ["gif"] },
     webp: { name: "WebP 动图", extensions: ["webp"] },
     avif: { name: "AVIF 新一代动图", extensions: ["avif"] },
+    mp4: { name: "MP4 视频表情", extensions: ["mp4"] },
   };
 
   const prioritized = [

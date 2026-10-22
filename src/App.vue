@@ -16,6 +16,7 @@ import {
   revealFileInDir,
   type BuiltinSticker,
   type DesktopInfo,
+  type ExportFormat,
   type ExportRecord,
   type MediaInfo,
   type RenderPlan,
@@ -54,7 +55,8 @@ const desktopInfo = ref<DesktopInfo | null>(null);
 const media = ref<MediaInfo | null>(null);
 const inputPath = ref("");
 const outputPath = ref("");
-const exportFormat = ref<"gif" | "webp" | "avif">("gif");
+const exportFormat = ref<ExportFormat>("gif");
+const includeAudio = ref(true);
 const status = ref<TaskStatus>("idle");
 const progress = ref(0);
 const statusMessage = ref("选择一个视频开始制作。");
@@ -849,7 +851,7 @@ function basenameWithoutExtension(path: string): string {
   return fileName.replace(/\.[^.]+$/, "") || "meme";
 }
 
-function defaultOutputPath(path: string, format: "gif" | "webp" | "avif" = exportFormat.value): string {
+function defaultOutputPath(path: string, format: ExportFormat = exportFormat.value): string {
   const separator = path.includes("\\") ? "\\" : "/";
   const parts = path.split(/[\\/]/);
   parts.pop();
@@ -858,21 +860,21 @@ function defaultOutputPath(path: string, format: "gif" | "webp" | "avif" = expor
   return parent ? `${parent}${separator}${fileName}` : fileName;
 }
 
-function ensureFormatExtension(path: string, format: "gif" | "webp" | "avif" = exportFormat.value): string {
+function ensureFormatExtension(path: string, format: ExportFormat = exportFormat.value): string {
   const clean = path.trim();
   if (!clean) return "";
   const lower = clean.toLowerCase();
   if (lower.endsWith(`.${format}`)) {
     return clean;
   }
-  if (lower.endsWith(".gif") || lower.endsWith(".webp") || lower.endsWith(".avif")) {
+  if (lower.endsWith(".gif") || lower.endsWith(".webp") || lower.endsWith(".avif") || lower.endsWith(".mp4")) {
     const idx = clean.lastIndexOf(".");
     return `${clean.substring(0, idx)}.${format}`;
   }
   return `${clean}.${format}`;
 }
 
-function setExportFormat(fmt: "gif" | "webp" | "avif"): void {
+function setExportFormat(fmt: ExportFormat): void {
   exportFormat.value = fmt;
   if (outputPath.value.trim()) {
     outputPath.value = ensureFormatExtension(outputPath.value.trim(), fmt);
@@ -994,6 +996,7 @@ function buildRenderPlan(): RenderPlan {
     inputPath: inputPath.value,
     outputPath: finalOut,
     format: exportFormat.value,
+    includeAudio: includeAudio.value,
     startSecs: Number(startSecs.value),
     endSecs: Number(endSecs.value),
     crop: useCrop.value ? { ...crop } : null,
@@ -1212,12 +1215,18 @@ async function loadHistoryPlan(record: ExportRecord): Promise<void> {
     imagePreviewUrl.value = "";
   }
 
-  if (p.format === "avif" || record.filePath.toLowerCase().endsWith(".avif")) {
+  if (p.format === "mp4" || record.filePath.toLowerCase().endsWith(".mp4")) {
+    exportFormat.value = "mp4";
+  } else if (p.format === "avif" || record.filePath.toLowerCase().endsWith(".avif")) {
     exportFormat.value = "avif";
   } else if (p.format === "webp" || record.filePath.toLowerCase().endsWith(".webp")) {
     exportFormat.value = "webp";
   } else {
     exportFormat.value = "gif";
+  }
+
+  if (p.includeAudio !== undefined) {
+    includeAudio.value = p.includeAudio;
   }
 
   if (p.videoFilter) {
@@ -1371,7 +1380,7 @@ async function connectDesktopEvents(): Promise<void> {
         progress.value = 100;
         outputBytes.value = event.outputBytes;
         outputPath.value = event.outputPath;
-        const fmtLabel = exportFormat.value === "avif" ? "AVIF" : exportFormat.value === "webp" ? "WebP" : "GIF";
+        const fmtLabel = exportFormat.value === "mp4" ? "MP4 微视频" : exportFormat.value === "avif" ? "AVIF" : exportFormat.value === "webp" ? "WebP" : "GIF";
         statusMessage.value = `${fmtLabel} 已导出，可以打开文件查看。`;
         await addHistoryRecord(event.outputPath, event.outputBytes);
       },
@@ -1712,6 +1721,7 @@ function buildCurrentDraft(): StudioDraft {
     fps: Number(fps.value),
     quality: currentQuality.value,
     format: exportFormat.value,
+    includeAudio: includeAudio.value,
     videoFilter: currentVideoFilter.value,
     selectedPresetId: selectedPresetId.value,
     useText: useText.value,
@@ -1772,6 +1782,7 @@ function resetWorkspace(): void {
   currentQuality.value = "medium";
   selectedPresetId.value = "custom";
   exportFormat.value = "gif";
+  includeAudio.value = true;
   useText.value = false;
   textLayers.value = [
     {
@@ -1822,6 +1833,9 @@ async function restoreDraftIfAvailable(): Promise<void> {
         fps.value = draft.fps;
         currentQuality.value = draft.quality;
         exportFormat.value = draft.format;
+        if (draft.includeAudio !== undefined) {
+          includeAudio.value = draft.includeAudio;
+        }
         currentVideoFilter.value = (draft.videoFilter as VideoFilterKey) || "none";
         selectedPresetId.value = draft.selectedPresetId;
         useText.value = draft.useText;
@@ -1907,6 +1921,7 @@ watch(
     fps,
     currentQuality,
     exportFormat,
+    includeAudio,
     selectedPresetId,
     useText,
     text,
@@ -2528,7 +2543,7 @@ onBeforeUnmount(() => {
             <div class="control-section output-section">
               <div class="section-label-row">
                 <div class="section-label"><span>04</span> 格式与保存</div>
-                <span class="format-hint">{{ exportFormat === 'avif' ? '超高压缩比·新一代' : exportFormat === 'webp' ? '小体积·真彩色' : '通用兼容' }}</span>
+                <span class="format-hint">{{ exportFormat === 'mp4' ? '声画短视频·原声有戏' : exportFormat === 'avif' ? '超高压缩比·新一代' : exportFormat === 'webp' ? '小体积·真彩色' : '通用兼容' }}</span>
               </div>
               <div class="format-pills">
                 <button
@@ -2559,11 +2574,33 @@ onBeforeUnmount(() => {
                   @click="setExportFormat('avif')"
                 >
                   <span class="format-pill-name">AVIF</span>
-                  <span class="format-pill-badge badge-avif">新一代·超压缩</span>
+                  <span class="format-pill-badge badge-avif">超压缩</span>
+                </button>
+                <button
+                  type="button"
+                  class="format-pill pill-mp4"
+                  :class="{ active: exportFormat === 'mp4' }"
+                  title="MP4 短视频格式，保留原声音频，支持发送微信/小红书/抖音等平台"
+                  @click="setExportFormat('mp4')"
+                >
+                  <span class="format-pill-name">MP4</span>
+                  <span class="format-pill-badge badge-mp4">原声微视频</span>
                 </button>
               </div>
+
+              <!-- 当格式为 MP4 时呈现音频原声保留开关 -->
+              <div v-if="exportFormat === 'mp4'" class="audio-switch-row">
+                <label class="audio-switch-label" title="开启后导出的 MP4 将包含源片声音与变速同步音效">
+                  <input type="checkbox" v-model="includeAudio" class="audio-switch-checkbox" />
+                  <span class="audio-switch-text">
+                    <span class="audio-switch-title">🔊 保留原声音频</span>
+                    <span class="audio-switch-sub">混流 AAC 音轨，且声画同步变速</span>
+                  </span>
+                </label>
+              </div>
+
               <div class="output-path-row">
-                <input v-model="outputPath" type="text" :placeholder="exportFormat === 'avif' ? 'AVIF 输出路径' : exportFormat === 'webp' ? 'WebP 输出路径' : 'GIF 输出路径'" />
+                <input v-model="outputPath" type="text" :placeholder="exportFormat === 'mp4' ? 'MP4 输出路径' : exportFormat === 'avif' ? 'AVIF 输出路径' : exportFormat === 'webp' ? 'WebP 输出路径' : 'GIF 输出路径'" />
                 <button type="button" aria-label="选择输出路径" @click="chooseOutput">…</button>
               </div>
             </div>
@@ -2634,7 +2671,7 @@ onBeforeUnmount(() => {
             </button>
             <button v-if="isBusy" class="secondary-action danger" type="button" @click="stopRender">取消</button>
             <button v-else class="primary-action" type="button" :disabled="!canRender || !isDesktop" @click="startRender">
-              {{ status === "completed" ? "再次导出" : (exportFormat === "avif" ? "导出 AVIF" : exportFormat === "webp" ? "导出 WebP" : "导出 GIF") }} <span>↗</span>
+              {{ status === "completed" ? "再次导出" : (exportFormat === "mp4" ? "导出 MP4" : exportFormat === "avif" ? "导出 AVIF" : exportFormat === "webp" ? "导出 WebP" : "导出 GIF") }} <span>↗</span>
             </button>
           </div>
         </section>
@@ -2767,9 +2804,18 @@ onBeforeUnmount(() => {
                   class="history-card"
                 >
                   <div class="history-card-thumb">
-                    <img v-if="item.previewUrl" :src="item.previewUrl" :alt="item.fileName" />
+                    <video
+                      v-if="item.previewUrl && item.fileName.toLowerCase().endsWith('.mp4')"
+                      :src="item.previewUrl"
+                      autoplay
+                      loop
+                      muted
+                      playsinline
+                      class="history-thumb-video"
+                    ></video>
+                    <img v-else-if="item.previewUrl" :src="item.previewUrl" :alt="item.fileName" />
                     <div v-else class="card-thumb-fallback">
-                      <span>{{ item.fileName.toLowerCase().endsWith('.avif') ? 'AVIF' : item.fileName.toLowerCase().endsWith('.webp') ? 'WEBP' : 'GIF' }}</span>
+                      <span>{{ item.fileName.toLowerCase().endsWith('.mp4') ? 'MP4' : item.fileName.toLowerCase().endsWith('.avif') ? 'AVIF' : item.fileName.toLowerCase().endsWith('.webp') ? 'WEBP' : 'GIF' }}</span>
                     </div>
                     <span class="history-card-size-pill">{{ formatBytes(item.outputBytes) }}</span>
                   </div>
@@ -2779,9 +2825,9 @@ onBeforeUnmount(() => {
                       <strong class="history-card-filename" :title="item.fileName">{{ item.fileName }}</strong>
                       <span
                         class="history-format-badge"
-                        :class="item.fileName.toLowerCase().endsWith('.avif') ? 'badge-avif' : item.fileName.toLowerCase().endsWith('.webp') ? 'badge-webp' : 'badge-gif'"
+                        :class="item.fileName.toLowerCase().endsWith('.mp4') ? 'badge-mp4' : item.fileName.toLowerCase().endsWith('.avif') ? 'badge-avif' : item.fileName.toLowerCase().endsWith('.webp') ? 'badge-webp' : 'badge-gif'"
                       >
-                        {{ item.fileName.toLowerCase().endsWith('.avif') ? 'AVIF' : item.fileName.toLowerCase().endsWith('.webp') ? 'WEBP' : 'GIF' }}
+                        {{ item.fileName.toLowerCase().endsWith('.mp4') ? 'MP4' : item.fileName.toLowerCase().endsWith('.avif') ? 'AVIF' : item.fileName.toLowerCase().endsWith('.webp') ? 'WEBP' : 'GIF' }}
                       </span>
                       <small class="history-card-time">{{ formatRelativeTime(item.timestamp) }}</small>
                     </div>

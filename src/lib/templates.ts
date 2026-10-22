@@ -18,7 +18,7 @@ export interface MemeTemplate {
   badge: string;
   textStyle: TextStyleConfig;
   suggestedPresetId?: string;
-  suggestedFormat?: "gif" | "webp" | "avif";
+  suggestedFormat?: "gif" | "webp" | "avif" | "mp4";
   createdAt?: number;
 }
 
@@ -49,8 +49,9 @@ export interface StudioDraft {
   outputWidth: number;
   fps: number;
   quality: "low" | "medium" | "high";
-  format: "gif" | "webp" | "avif";
+  format: "gif" | "webp" | "avif" | "mp4";
   videoFilter?: string;
+  includeAudio?: boolean;
   selectedPresetId: string;
   useText: boolean;
   text: string;
