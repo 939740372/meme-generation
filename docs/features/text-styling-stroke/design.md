@@ -1,6 +1,6 @@
 # 技术设计：文字描边与字幕底色条增强
 
-- 状态：ready-to-merge
+- 状态：merged
 - Feature slug: text-styling-stroke
 - 分支：feature/text-styling-stroke
 - 负责人：待定

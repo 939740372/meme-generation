@@ -42,6 +42,7 @@
 - [x] 可视化时间轴和拖拽裁切（详见 docs/features/creative-timeline-canvas/）
 - [x] 画布内拖拽文字/图案并实时预览
 - [x] 可视化矩形裁切框与九宫格画布交互（详见 docs/features/visual-crop-box/）
+- [x] 文字描边与台词背景底框增强（详见 docs/features/text-styling-stroke/）
 - [x] 常用尺寸、FPS、压缩质量预设（详见 docs/features/export-presets/）
 - [x] 最近导出历史与快捷操作（访达定位/复制文件/载入参数，详见 docs/features/export-history/）
 - [ ] 草稿、本地项目配置和可复用模板
