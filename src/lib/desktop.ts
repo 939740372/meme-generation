@@ -31,6 +31,11 @@ export interface TextOverlay {
   y: number;
   size: number;
   color: string;
+  strokeWidth?: number;
+  strokeColor?: string;
+  useBox?: boolean;
+  boxColor?: string;
+  boxOpacity?: number;
 }
 
 export interface ImageOverlay {

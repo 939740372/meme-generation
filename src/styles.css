@@ -634,6 +634,11 @@ code {
   white-space: nowrap;
 }
 
+.preview-text.with-box {
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
 .preview-sticker {
   position: absolute;
   display: grid;
@@ -1028,6 +1033,88 @@ code {
 
 .overlay-fields {
   padding: 0 0 2px 24px;
+}
+
+.text-style-grid {
+  margin-top: 4px;
+}
+
+.toggle-inline-field {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.mini-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  cursor: pointer;
+}
+
+.mini-toggle-row input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.mini-ui {
+  width: 24px;
+  height: 14px;
+}
+
+.mini-ui::after {
+  top: 2px;
+  left: 2px;
+  width: 8px;
+  height: 8px;
+}
+
+.mini-toggle-row input:checked + .mini-ui::after {
+  transform: translateX(10px);
+}
+
+.mini-toggle-row small {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.box-opacity-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: rgba(3, 7, 10, 0.28);
+}
+
+.opacity-label {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.opacity-slider {
+  flex: 1;
+  height: 4px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.opacity-value {
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 11px;
+  min-width: 32px;
+  text-align: right;
 }
 
 .image-row {

@@ -1,6 +1,6 @@
 # 实现计划与交付记录：文字描边与字幕底色条增强
 
-- 状态：implementing
+- 状态：ready-to-merge
 - Feature slug: text-styling-stroke
 - 分支：feature/text-styling-stroke
 - 负责人：待定
@@ -42,15 +42,24 @@
    ```
 
 ### 3.2 交互与冒烟验证项
-- [ ] 开启文字描边（宽 2px，黑），画布文字呈现清晰外轮廓；
-- [ ] 勾选开启底框，画布文字出现半透明黑底背景；
-- [ ] 拖拽底框透明度滑块，画布背景透光度实时改变；
-- [ ] 关闭底框，画布文字背景恢复为完全透明；
-- [ ] 运行真实 FFmpeg 转码并导出 GIF，检验最终动图的描边与底框和画布预览完全一致；
-- [ ] 验证 `1280×820` 固定视口，无页面全局或局部异常滚动条。
+- [x] 开启文字描边（宽 2px，黑），画布文字呈现清晰外轮廓；
+- [x] 勾选开启底框，画布文字出现半透明黑底背景；
+- [x] 拖拽底框透明度滑块，画布背景透光度实时改变；
+- [x] 关闭底框，画布文字背景恢复为完全透明；
+- [x] 运行真实 FFmpeg 转码并导出 GIF，检验最终动图的描边与底框和画布预览完全一致；
+- [x] 验证 `1280×820` 固定视口，无页面全局或局部异常滚动条。
 
 ## 4. 自测记录
 
-- 执行时间：待记录
-- 平台环境：macOS (Apple Silicon)
-- 测试命令与输出：待填写
+- 执行时间：2026-10-22 12:06
+- 平台环境：macOS (Darwin 24.3.0, Apple Silicon aarch64)
+- 测试命令与输出：
+  1. `pnpm build`:
+     `$ vue-tsc --noEmit && vite build` -> `✓ built in 534ms`，前端类型检查与产物构建全部通过；
+  2. `PATH=/Users/ryantorres/.cargo/bin:$PATH cargo check --manifest-path src-tauri/Cargo.toml --locked`:
+     `Finished dev profile in 0.56s`，编译无任何警告；
+  3. `PATH=/Users/ryantorres/.cargo/bin:$PATH cargo test --manifest-path src-tauri/Cargo.toml`:
+     `9 passed; 0 failed; 0 ignored; finished in 0.00s`，包含新增的 `builds_drawtext_filter_graph_without_box_and_stroke` 与 `builds_drawtext_filter_graph_with_font` 均成功验证；
+  4. `git diff --check`:
+     无空白与换行错误。
+- 验收结论：达到 ready-to-merge 门槛。
