@@ -39,6 +39,11 @@ export interface TextOverlay {
   boxColor?: string;
   boxOpacity?: number;
   visible?: boolean;
+  rotation?: number;
+  arcRadius?: number;
+  isItalic?: boolean;
+  shadowOffset?: number;
+  shadowColor?: string;
 }
 
 export interface ImageOverlay {

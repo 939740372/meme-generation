@@ -1,6 +1,6 @@
 # 任务清单：高级文字排版效果 (advanced-text-effects)
 
-- 状态：implementing
+- 状态：ready-to-merge
 - Feature slug: advanced-text-effects
 - 分支：feature/advanced-text-effects
 - 负责人：Antigravity
@@ -15,38 +15,38 @@
 - [x] 完成 `docs/features/advanced-text-effects/design.md` 方案设计
 - [x] 完成 `docs/features/advanced-text-effects/implementation.md` 实现计划
 - [x] 完成 `docs/features/advanced-text-effects/todo.md` 任务清单
-- [ ] 提交规范 commit 建立 feature 基线
+- [x] 提交规范 commit 建立 feature 基线
 
 ### 阶段二：Rust 后端滤镜算法实现
 
-- [ ] 在 `src-tauri/src/lib.rs` 中扩展 `TextOverlay`（新增 `rotation`, `arc_radius`, `is_italic`, `shadow_offset`, `shadow_color`）
-- [ ] 升级 `build_filter_graph`：
-  - [ ] 标准水平文字支持原生 `shadowcolor`, `shadowx`, `shadowy`
-  - [ ] 独立/多图层文字旋转支持透明画板 + `rotate` + 中心对齐 `overlay`
-  - [ ] 文字斜体支持 `shear=shx=-0.22:c=none`
-  - [ ] 弧形弯曲文字支持几何圆弧逐字分解与切向角定位
-- [ ] 编写 Rust 单元测试并验证全部跑通
+- [x] 在 `src-tauri/src/lib.rs` 中扩展 `TextOverlay`（新增 `rotation`, `arc_radius`, `is_italic`, `shadow_offset`, `shadow_color`）
+- [x] 升级 `build_filter_graph`：
+  - [x] 标准水平文字支持原生 `shadowcolor`, `shadowx`, `shadowy`
+  - [x] 独立/多图层文字旋转支持透明画板 + `rotate` + 中心对齐 `overlay`
+  - [x] 文字斜体支持 `shear=shx=-0.22:c=none`
+  - [x] 弧形弯曲文字支持几何圆弧逐字分解与切向角定位
+- [x] 编写 Rust 单元测试并验证全部跑通 (32/32 tests passed)
 
 ### 阶段三：前端数据模型与交互开发
 
-- [ ] 更新 `src/lib/desktop.ts` 中 `TextOverlay` 接口
-- [ ] 更新 `src/lib/templates.ts` 中 `CanvasTextLayer` 与 `StudioDraft`
-- [ ] 在 `src/App.vue` 图层控制面板中增加：
-  - [ ] 旋转角度滑块与快捷预设胶囊 (`0°`, `-45°`, `-15°`, `+15°`, `+45°`, `90°`)
-  - [ ] 弧形弯曲度滑块（-100 ~ 100，凹凸视觉标识）
-  - [ ] 斜体动感切换开关
-  - [ ] 阴影偏移距离滑块与阴影颜色拾色器
-- [ ] 在 `src/App.vue` 画布预览中增加旋转、弯曲、斜体与阴影渲染逻辑
-- [ ] 在 `src/styles.css` 中添加高级排版控件视觉样式
+- [x] 更新 `src/lib/desktop.ts` 中 `TextOverlay` 接口
+- [x] 更新 `src/lib/templates.ts` 中 `CanvasTextLayer` 与 `StudioDraft`
+- [x] 在 `src/App.vue` 图层控制面板中增加：
+  - [x] 旋转角度滑块与快捷预设胶囊 (`0°`, `-45°`, `-15°`, `+15°`, `+45°`, `90°`)
+  - [x] 弧形弯曲度滑块（-100 ~ 100，凹凸视觉标识）
+  - [x] 斜体动感切换开关
+  - [x] 阴影偏移距离滑块与阴影颜色拾色器
+- [x] 在 `src/App.vue` 画布预览中增加旋转、弯曲、斜体与阴影渲染逻辑
+- [x] 在 `src/styles.css` 中添加高级排版控件视觉样式
 
 ### 阶段四：验证、自测与质量门槛
 
-- [ ] 编写端到端冒烟测试脚本 `scripts/smoke-test-advanced-text.mjs`
-- [ ] 运行冒烟测试，通过真实 FFmpeg 导出验证旋转、弧度、斜体与阴影
-- [ ] 执行前端类型检查与打包：`pnpm build`
-- [ ] 执行 Rust 测试与检查：`cargo test` 与 `cargo check --locked`
-- [ ] 执行格式与代码差异检查：`git diff --check`
-- [ ] 更新 `implementation.md` 自测记录与文档状态为 `ready-to-merge`
+- [x] 编写端到端冒烟测试脚本 `scripts/smoke-test-advanced-text.mjs`
+- [x] 运行冒烟测试，通过真实 FFmpeg 导出验证旋转、弧度、斜体与阴影
+- [x] 执行前端类型检查与打包：`pnpm build`
+- [x] 执行 Rust 测试与检查：`cargo test` 与 `cargo check --locked`
+- [x] 执行格式与代码差异检查：`git diff --check`
+- [x] 更新 `implementation.md` 自测记录与文档状态为 `ready-to-merge`
 
 ### 阶段五：合并与主分支同步
 

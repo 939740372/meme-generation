@@ -8,6 +8,11 @@ export interface TextStyleConfig {
   boxColor: string;
   boxOpacity: number;
   positionRatio: { x: number; y: number }; // 0.0 ~ 1.0 水平/垂直相对比例
+  rotation?: number;
+  arcRadius?: number;
+  isItalic?: boolean;
+  shadowOffset?: number;
+  shadowColor?: string;
 }
 
 export interface MemeTemplate {
@@ -35,6 +40,11 @@ export interface CanvasTextLayer {
   boxColor: string;
   boxOpacity: number;
   visible: boolean;
+  rotation?: number;
+  arcRadius?: number;
+  isItalic?: boolean;
+  shadowOffset?: number;
+  shadowColor?: string;
 }
 
 export interface StudioDraft {
@@ -65,6 +75,11 @@ export interface StudioDraft {
   textUseBox: boolean;
   textBoxColor: string;
   textBoxOpacity: number;
+  textRotation?: number;
+  textArcRadius?: number;
+  textIsItalic?: boolean;
+  textShadowOffset?: number;
+  textShadowColor?: string;
   textLayers?: CanvasTextLayer[];
   activeLayerId?: string;
   useImage: boolean;
