@@ -1,6 +1,6 @@
 # 需求调研：导出预设与压缩质量控制
 
-- 状态：ready-to-merge
+- 状态：merged
 - Feature slug: export-presets
 - 分支：feature/export-presets
 - 负责人：待定

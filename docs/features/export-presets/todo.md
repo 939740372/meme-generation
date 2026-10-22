@@ -1,6 +1,6 @@
 # 细化 TODO：导出预设与压缩质量控制
 
-- 状态：ready-to-merge
+- 状态：merged
 - Feature slug: export-presets
 - 分支：feature/export-presets
 - 负责人：待定
@@ -33,5 +33,5 @@
 - [x] 执行 `cargo check --locked` 与 `cargo test`
 - [x] 执行端到端真实导出验证：验证 `wechat-small` 预设成功将动图体积压在 1MB 内
 - [x] 更新 feature 文档状态为 `ready-to-merge`
-- [ ] 合并到 `main` 分支并将状态更新为 `merged`
-- [ ] 同步更新根目录 `TODO.md`
+- [x] 合并到 `main` 分支并将状态更新为 `merged`
+- [x] 同步更新根目录 `TODO.md`
