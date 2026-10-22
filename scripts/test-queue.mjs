@@ -44,6 +44,7 @@ const mockPlan = {
   textLayers: null,
   imageOverlay: null,
   format: "gif",
+  videoFilter: "grayscale",
 };
 
 const queueExisting = new Set();
@@ -57,6 +58,7 @@ assert.equal(item1.format, "gif");
 assert.equal(item1.timeRangeLabel, "2.50s ~ 4.80s");
 assert.equal(item1.outputPath, "/Users/test/video_2.5s-4.8s.gif");
 assert.equal(item1.plan.outputPath, "/Users/test/video_2.5s-4.8s.gif");
+assert.equal(item1.plan.videoFilter, "grayscale");
 
 // Next item with same params should not collide
 const item2 = createQueueItem(mockPlan, "video.mp4", queueExisting);

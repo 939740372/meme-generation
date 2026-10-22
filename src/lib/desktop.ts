@@ -69,6 +69,7 @@ export interface RenderPlan {
   textLayers?: TextOverlay[] | null;
   imageOverlay: ImageOverlay | null;
   format?: "gif" | "webp" | "avif";
+  videoFilter?: string;
 }
 
 export interface ExportRecord {

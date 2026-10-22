@@ -1,6 +1,6 @@
 # 需求调研：全局滤镜与画面调色 (video-filters)
 
-- 状态：proposed
+- 状态：ready-to-merge
 - Feature slug: video-filters
 - 分支：feature/video-filters
 - 负责人：Antigravity

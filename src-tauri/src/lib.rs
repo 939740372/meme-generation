@@ -120,6 +120,8 @@ struct RenderPlan {
     image_overlay: Option<ImageOverlay>,
     #[serde(default)]
     format: Option<String>,
+    #[serde(default)]
+    video_filter: Option<String>,
 }
 
 impl RenderPlan {
@@ -580,6 +582,19 @@ fn color_for_filter(value: &str) -> String {
     }
 }
 
+fn map_video_filter(key: &str) -> Option<&'static str> {
+    match key.trim().to_ascii_lowercase().as_str() {
+        "grayscale" => Some("hue=s=0"),
+        "contrast" => Some("eq=contrast=1.6:saturation=1.4"),
+        "vintage" => Some("colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131"),
+        "invert" => Some("negate"),
+        "fast2x" => Some("setpts=0.5*PTS"),
+        "slow05x" => Some("setpts=2.0*PTS"),
+        "reverse" => Some("reverse"),
+        _ => None,
+    }
+}
+
 fn build_filter_graph(plan: &RenderPlan) -> String {
     let mut source = String::new();
     if let Some(crop) = &plan.crop {
@@ -590,6 +605,12 @@ fn build_filter_graph(plan: &RenderPlan) -> String {
         plan.output_width, -1
     ));
     source.push_str(&format!(",fps={}", plan.fps));
+
+    if let Some(filter_key) = &plan.video_filter {
+        if let Some(expr) = map_video_filter(filter_key) {
+            source.push_str(&format!(",{}", expr));
+        }
+    }
 
     let fontfile_opt = detect_system_font();
     for text in plan.active_text_layers() {
@@ -1255,6 +1276,7 @@ mod tests {
             text_layers: None,
             image_overlay: None,
             format: None,
+            ..Default::default()
         };
         let graph = build_filter_graph(&plan);
         assert!(graph.contains("palettegen"));
@@ -1290,6 +1312,7 @@ mod tests {
             text_layers: None,
             image_overlay: None,
             format: Some("gif".to_string()),
+            ..Default::default()
         };
         let graph = build_filter_graph(&plan);
         assert!(graph.contains("drawtext="));
@@ -1328,6 +1351,7 @@ mod tests {
             text_layers: None,
             image_overlay: None,
             format: None,
+            ..Default::default()
         };
         let graph = build_filter_graph(&plan);
         assert!(graph.contains("box=0"));
@@ -1388,6 +1412,7 @@ mod tests {
             ]),
             image_overlay: None,
             format: Some("gif".to_string()),
+            ..Default::default()
         };
         let graph = build_filter_graph(&plan);
         assert!(graph.contains("顶部吐槽"));
@@ -1411,6 +1436,7 @@ mod tests {
             text_layers: None,
             image_overlay: None,
             format: Some("webp".to_string()),
+            ..Default::default()
         };
         let graph = build_filter_graph(&plan);
         assert!(!graph.contains("palettegen"));
@@ -1439,6 +1465,7 @@ mod tests {
             text_layers: None,
             image_overlay: None,
             format: Some("avif".to_string()),
+            video_filter: None,
         };
         let graph = build_filter_graph(&plan);
         assert!(!graph.contains("palettegen"));
@@ -1453,6 +1480,52 @@ mod tests {
         assert!(args.iter().any(|arg| arg == "8"));
         assert!(args.iter().any(|arg| arg == "-pix_fmt"));
         assert!(args.iter().any(|arg| arg == "yuv420p"));
+    }
+
+    #[test]
+    fn builds_filter_graph_with_video_filters() {
+        let base_plan = RenderPlan {
+            input_path: "input.mp4".to_string(),
+            output_path: "output.gif".to_string(),
+            start_secs: 0.0,
+            end_secs: 1.0,
+            crop: None,
+            output_width: 300,
+            fps: 10,
+            quality: None,
+            text_overlay: None,
+            text_layers: None,
+            image_overlay: None,
+            format: Some("gif".to_string()),
+            video_filter: None,
+        };
+
+        // 1. Grayscale
+        let mut p = base_plan.clone();
+        p.video_filter = Some("grayscale".to_string());
+        let g = build_filter_graph(&p);
+        assert!(g.contains("hue=s=0"));
+
+        // 2. Invert / Negate
+        p.video_filter = Some("invert".to_string());
+        let g = build_filter_graph(&p);
+        assert!(g.contains("negate"));
+
+        // 3. Fast 2x
+        p.video_filter = Some("fast2x".to_string());
+        let g = build_filter_graph(&p);
+        assert!(g.contains("setpts=0.5*PTS"));
+
+        // 4. Reverse
+        p.video_filter = Some("reverse".to_string());
+        let g = build_filter_graph(&p);
+        assert!(g.contains("reverse"));
+
+        // 5. None or invalid
+        p.video_filter = Some("none".to_string());
+        let g = build_filter_graph(&p);
+        assert!(!g.contains("hue=s=0"));
+        assert!(!g.contains("negate"));
     }
 
     #[test]
@@ -1482,6 +1555,7 @@ mod tests {
             text_layers: None,
             image_overlay: None,
             format: Some("webp".to_string()),
+            ..Default::default()
         };
         assert!(validate_render_plan(&plan_webp, &media).is_ok());
 
