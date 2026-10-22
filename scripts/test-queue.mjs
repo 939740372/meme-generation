@@ -14,13 +14,13 @@ const p1 = generateQueueOutputPath("/tmp/output", "sample_video.mp4", 1.2, 3.5, 
 assert.equal(p1, "/tmp/output/sample_video_1.2s-3.5s.gif");
 existing.add(p1);
 
-// When same name exists, should append _(1), _(2), etc.
+// When same name exists, should append (1), (2), etc. according to system rules
 const p2 = generateQueueOutputPath("/tmp/output", "sample_video.mp4", 1.2, 3.5, "gif", existing);
-assert.equal(p2, "/tmp/output/sample_video_1.2s-3.5s_(1).gif");
+assert.equal(p2, "/tmp/output/sample_video_1.2s-3.5s (1).gif");
 existing.add(p2);
 
 const p3 = generateQueueOutputPath("/tmp/output", "sample_video.mp4", 1.2, 3.5, "gif", existing);
-assert.equal(p3, "/tmp/output/sample_video_1.2s-3.5s_(2).gif");
+assert.equal(p3, "/tmp/output/sample_video_1.2s-3.5s (2).gif");
 
 const pWebp = generateQueueOutputPath("/tmp/output", "funny cat.mp4", 0.0, 2.0, "webp", existing);
 assert.equal(pWebp, "/tmp/output/funny_cat_0.0s-2.0s.webp");
@@ -66,7 +66,7 @@ assert.equal(item1.plan.videoFilter, "grayscale");
 // Next item with same params should not collide
 const item2 = createQueueItem(mockPlan, "video.mp4", queueExisting);
 assert.notEqual(item1.id, item2.id);
-assert.equal(item2.outputPath, "/Users/test/video_2.5s-4.8s_(1).gif");
+assert.equal(item2.outputPath, "/Users/test/video_2.5s-4.8s (1).gif");
 
 const mp4Plan = {
   ...mockPlan,

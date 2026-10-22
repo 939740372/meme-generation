@@ -49,7 +49,7 @@ export function generateQueueOutputPath(
   let counter = 1;
 
   while (existingPaths.has(candidate)) {
-    candidate = `${normalizedBase}/${cleanName}_${timeTag}_(${counter}).${format}`;
+    candidate = `${normalizedBase}/${cleanName}_${timeTag} (${counter}).${format}`;
     counter++;
   }
   return candidate;
