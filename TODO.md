@@ -47,6 +47,7 @@
 - [x] 最近导出历史与快捷操作（访达定位/复制文件/载入参数，详见 docs/features/export-history/）
 - [x] 常用表情包模板与草稿暂存（实时防抖暂存/启动恢复/内置经典排版/一键存为模板，详见 docs/features/templates-and-drafts/）
 - [x] 多文字图层支持（多段独立文字叠加、图层列表管理、显隐/删除、链式 drawtext 渲染，详见 docs/features/multi-text-layers/）
+- [x] 内置透明表情贴纸库（18 款经典免抠透明 PNG、抽屉素材库分类浏览、画布真图渲染与角手柄缩放交互，详见 docs/features/sticker-library/）
 
 ### P3：效率与扩展
 

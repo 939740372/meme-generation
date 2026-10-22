@@ -1,6 +1,6 @@
 # 实现计划与自测：内置透明表情贴纸库 (sticker-library)
 
-- 状态：ready-to-merge
+- 状态：merged
 - Feature slug: sticker-library
 - 分支：feature/sticker-library
 - 负责人：Antigravity

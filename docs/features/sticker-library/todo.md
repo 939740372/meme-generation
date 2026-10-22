@@ -1,6 +1,6 @@
 # 任务拆解：内置透明表情贴纸库 (sticker-library)
 
-- 状态：ready-to-merge
+- 状态：merged
 - Feature slug: sticker-library
 - 分支：feature/sticker-library
 - 负责人：Antigravity
@@ -34,7 +34,7 @@
   - [x] 5.3 运行 `cargo check --locked` 与 `cargo test` 全绿通过（13 passed）
   - [x] 5.4 执行真实 FFmpeg 贴纸动图合成 Smoke Test（GIF 与 WebP）
   - [x] 5.5 检查 `git diff --check`
-- [ ] 6. 收尾与主分支合入
+- [x] 6. 收尾与主分支合入
   - [x] 6.1 更新五件套文档状态为 `ready-to-merge` 并记录自测结果
-  - [ ] 6.2 非快进合并至 `main`
-  - [ ] 6.3 文档状态变更为 `merged`，同步根目录 `TODO.md`，推送到远程仓库
+  - [x] 6.2 非快进合并至 `main`
+  - [x] 6.3 文档状态变更为 `merged`，同步根目录 `TODO.md`，推送到远程仓库
