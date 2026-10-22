@@ -82,6 +82,23 @@ const isSaveTemplateModalOpen = ref(false);
 const newTemplateName = ref("");
 const templateNameInputRef = ref<HTMLInputElement | null>(null);
 
+// 右侧属性检查器分栏与折叠状态
+type InspectorTab = "canvas" | "text" | "media" | "export";
+const activeInspectorTab = ref<InspectorTab>("canvas");
+const showAdvancedText = ref(false);
+const showExactTextCoords = ref(false);
+const showExactCropCoords = ref(false);
+const showExactStickerCoords = ref(false);
+
+function toggleDrawerTab(tab: "history" | "templates" | "stickers" | "queue" | "sfx"): void {
+  if (isDrawerOpen.value && drawerTab.value === tab) {
+    isDrawerOpen.value = false;
+  } else {
+    drawerTab.value = tab;
+    isDrawerOpen.value = true;
+  }
+}
+
 // 音频混流与音效状态
 const builtinSfxList = ref<BuiltinSfx[]>([]);
 const selectedSfxCategory = ref<"all" | "reaction" | "drama" | "funny">("all");
@@ -206,6 +223,7 @@ function applySfx(sfx: BuiltinSfx): void {
   bgmName.value = sfx.name;
   bgmDuration.value = sfx.duration;
   localBgmDataUrl.value = sfx.dataUrl;
+  activeInspectorTab.value = "media";
   showToast(`已选用音效：${sfx.name}`);
 }
 
@@ -317,6 +335,7 @@ function applySticker(sticker: BuiltinSticker): void {
     imageX.value = 50;
     imageY.value = 50;
   }
+  activeInspectorTab.value = "media";
   isDrawerOpen.value = false;
   showToast(`已添加贴纸「${sticker.name}」到画面`);
 }
@@ -666,6 +685,15 @@ function setRotationPreset(deg: number): void {
   textRotation.value = deg;
 }
 
+const hasAdvancedTextActive = computed(() => {
+  return Boolean(
+    textRotation.value !== 0 ||
+    textArcRadius.value !== 0 ||
+    textIsItalic.value ||
+    textShadowOffset.value > 0
+  );
+});
+
 const useImage = ref(false);
 const imagePath = ref("");
 const imageX = ref(24);
@@ -951,6 +979,7 @@ function startDragText(layer: CanvasTextLayer, event: PointerEvent): void {
   event.preventDefault();
   event.stopPropagation();
   activeLayerId.value = layer.id;
+  activeInspectorTab.value = "text";
   isDraggingText.value = true;
   const startClientX = event.clientX;
   const startClientY = event.clientY;
@@ -982,6 +1011,7 @@ function startDragImage(event: PointerEvent): void {
   if (!media.value || !stageRef.value) return;
   event.preventDefault();
   event.stopPropagation();
+  activeInspectorTab.value = "media";
   isDraggingImage.value = true;
   const startClientX = event.clientX;
   const startClientY = event.clientY;
@@ -1013,6 +1043,7 @@ function startResizeImage(event: PointerEvent): void {
   if (!media.value || !stageRef.value) return;
   event.preventDefault();
   event.stopPropagation();
+  activeInspectorTab.value = "media";
   isResizingImage.value = true;
   const startClientX = event.clientX;
   const initWidth = imageWidth.value;
@@ -1064,6 +1095,7 @@ function startDragCrop(event: PointerEvent): void {
   if (!media.value || !stageRef.value) return;
   event.preventDefault();
   event.stopPropagation();
+  activeInspectorTab.value = "canvas";
   isDraggingCrop.value = true;
   activeCropHandle.value = "move";
 
@@ -1099,6 +1131,7 @@ function startResizeCrop(handle: string, event: PointerEvent): void {
   if (!media.value || !stageRef.value) return;
   event.preventDefault();
   event.stopPropagation();
+  activeInspectorTab.value = "canvas";
   isDraggingCrop.value = true;
   activeCropHandle.value = handle;
 
@@ -1969,11 +2002,6 @@ function addToQueue(): void {
   showToast(`已加入导出队列 (第 ${queueItems.value.length} 个任务)`);
 }
 
-function openQueueDrawer(): void {
-  drawerTab.value = "queue";
-  isDrawerOpen.value = true;
-}
-
 async function startBatchQueue(): Promise<void> {
   if (!isDesktop.value) {
     showToast("请在桌面模式下使用批量导出");
@@ -2204,6 +2232,7 @@ function applyTemplate(tpl: MemeTemplate): void {
     setExportFormat(tpl.suggestedFormat);
   }
 
+  activeInspectorTab.value = "text";
   isDrawerOpen.value = false;
   showToast(`已套用「${tpl.name}」模板到当前图层`);
 }
@@ -2581,120 +2610,97 @@ onBeforeUnmount(() => {
       </div>
     </Transition>
 
-    <aside class="studio-sidebar">
-      <div class="brand-lockup">
-        <div class="brand-mark">M</div>
-        <div>
-          <strong>表情工坊</strong>
-        </div>
-      </div>
+    <main id="workspace" class="studio-main">
+      <!-- 1. 一体化极简顶栏 -->
+      <header class="studio-topbar">
+        <div class="topbar-left">
+          <div class="brand-lockup">
+            <div class="brand-mark">M</div>
+            <strong>表情工坊</strong>
+          </div>
 
-      <nav class="side-nav" aria-label="主导航">
-        <a class="side-nav-item active" href="#workspace">
-          <span class="nav-icon">✦</span>
-          动图制作
-        </a>
-        <button
-          type="button"
-          class="side-nav-item side-nav-btn"
-          title="打开排版模板库"
-          @click="openTemplatesDrawer"
-        >
-          <span class="nav-icon">📑</span>
-          模板库
-          <span class="side-nav-badge">{{ allTemplatesCount }}</span>
-        </button>
-      </nav>
+          <span class="topbar-divider"></span>
 
-      <div class="sidebar-history-section">
-        <div class="sidebar-history-header">
-          <div class="sidebar-history-title">
-            <span class="history-clock-icon">🕒</span>
-            <strong>最近导出</strong>
-            <span v-if="historyList.length > 0" class="history-count-badge">{{ historyList.length }}</span>
+          <div v-if="media" class="topbar-media-pill">
+            <span class="media-pill-icon">🎬</span>
+            <span class="media-pill-name" :title="media.fileName">{{ media.fileName }}</span>
+            <span class="media-pill-meta">{{ media.width }}×{{ media.height }} · {{ mediaDurationLabel }} · {{ mediaFpsLabel }}</span>
+            <button
+              type="button"
+              class="media-replace-btn"
+              :disabled="isBusy"
+              title="更换其他视频文件"
+              @click="chooseVideo"
+            >
+              更换视频
+            </button>
           </div>
           <button
-            v-if="historyList.length > 0"
+            v-else
             type="button"
-            class="history-expand-toggle"
-            title="查看完整历史抽屉"
-            @click="isDrawerOpen = true"
+            class="topbar-import-btn"
+            :disabled="isBusy"
+            @click="chooseVideo"
           >
-            全部 ↗
+            <span>＋</span> 导入视频
           </button>
         </div>
 
-        <div v-if="historyList.length > 0" class="sidebar-history-list">
-          <div
-            v-for="item in historyList.slice(0, 2)"
-            :key="item.id"
-            class="sidebar-history-card"
-            :title="`${item.fileName}\n${item.filePath}`"
-          >
-            <div class="sidebar-history-thumb">
-              <img v-if="item.previewUrl" :src="item.previewUrl" :alt="item.fileName" />
-              <span v-else class="thumb-fallback">{{ item.fileName.toLowerCase().endsWith('.webp') ? 'WEBP' : 'GIF' }}</span>
-            </div>
-            <div class="sidebar-history-info">
-              <div class="sidebar-history-name-row">
-                <span class="sidebar-history-name">{{ item.fileName }}</span>
-                <span class="history-format-badge" :class="item.fileName.toLowerCase().endsWith('.webp') ? 'badge-webp' : 'badge-gif'">
-                  {{ item.fileName.toLowerCase().endsWith('.webp') ? 'WEBP' : 'GIF' }}
-                </span>
-              </div>
-              <div class="sidebar-history-meta">
-                <span class="sidebar-history-size">{{ formatBytes(item.outputBytes) }}</span>
-                <span class="sidebar-history-time">{{ formatRelativeTime(item.timestamp) }}</span>
-              </div>
-            </div>
-            <div class="sidebar-history-actions">
-              <button
-                type="button"
-                class="sidebar-action-btn"
-                title="在访达中定位"
-                @click.stop="revealExportFile(item.filePath)"
-              >
-                🔍
-              </button>
-              <button
-                type="button"
-                class="sidebar-action-btn"
-                title="复制文件"
-                @click.stop="copyExportFile(item.filePath)"
-              >
-                📋
-              </button>
-              <button
-                type="button"
-                class="sidebar-action-btn"
-                title="载入此历史参数"
-                @click.stop="loadHistoryPlan(item)"
-              >
-                ↺
-              </button>
-            </div>
+        <div class="topbar-right">
+          <div class="topbar-drawer-group" role="toolbar" aria-label="素材与任务抽屉">
+            <button
+              type="button"
+              class="topbar-tool-btn"
+              :class="{ active: isDrawerOpen && drawerTab === 'templates' }"
+              title="打开表情包排版模板库"
+              @click="toggleDrawerTab('templates')"
+            >
+              <span>📑 模板</span>
+              <em v-if="allTemplatesCount > 0">{{ allTemplatesCount }}</em>
+            </button>
+            <button
+              type="button"
+              class="topbar-tool-btn"
+              :class="{ active: isDrawerOpen && drawerTab === 'stickers' }"
+              title="打开透明贴纸素材库"
+              @click="toggleDrawerTab('stickers')"
+            >
+              <span>🎨 贴纸</span>
+              <em v-if="builtinStickers.length > 0">{{ builtinStickers.length }}</em>
+            </button>
+            <button
+              type="button"
+              class="topbar-tool-btn"
+              :class="{ active: isDrawerOpen && drawerTab === 'sfx' }"
+              title="打开搞笑二创音效库"
+              @click="toggleDrawerTab('sfx')"
+            >
+              <span>🎵 音效</span>
+              <em v-if="builtinSfxList.length > 0">{{ builtinSfxList.length }}</em>
+            </button>
+            <button
+              type="button"
+              class="topbar-tool-btn"
+              :class="{ active: isDrawerOpen && drawerTab === 'queue', 'has-running': isQueueRunning }"
+              title="查看批量导出队列"
+              @click="toggleDrawerTab('queue')"
+            >
+              <span v-if="isQueueRunning" class="queue-pulse-dot"></span>
+              <span>📋 队列</span>
+              <em v-if="queueItems.length > 0">{{ pendingQueueCount > 0 ? pendingQueueCount : queueItems.length }}</em>
+            </button>
+            <button
+              type="button"
+              class="topbar-tool-btn"
+              :class="{ active: isDrawerOpen && drawerTab === 'history' }"
+              title="查看最近导出历史"
+              @click="toggleDrawerTab('history')"
+            >
+              <span>🕒 历史</span>
+              <em v-if="historyList.length > 0">{{ historyList.length }}</em>
+            </button>
           </div>
-        </div>
-        <div v-else class="sidebar-history-empty">
-          <span>暂无导出记录</span>
-        </div>
-      </div>
 
-      <div class="sidebar-bottom">
-        <div class="runtime-card">
-          <span class="runtime-dot" :class="{ offline: !isDesktop }"></span>
-          <div>
-            <strong>{{ isDesktop ? "桌面端" : "预览" }}</strong>
-            <small>{{ runtimeLabel }}</small>
-          </div>
-        </div>
-      </div>
-    </aside>
-
-    <main id="workspace" class="studio-main">
-      <header class="topbar">
-        <div class="topbar-meta"><span class="status-mark"></span>{{ isDesktop ? "桌面端" : "预览" }}</div>
-        <div class="topbar-actions">
           <button
             v-if="hasActiveDraftOrMedia"
             type="button"
@@ -2702,37 +2708,70 @@ onBeforeUnmount(() => {
             title="清空当前草稿并重置所有编辑参数"
             @click="resetWorkspace"
           >
-            ↺ 重置工作区
+            ↺ 重置
           </button>
+
+          <div class="runtime-pill" :title="runtimeLabel">
+            <span class="runtime-dot" :class="{ offline: !isDesktop }"></span>
+            <span>{{ isDesktop ? "桌面端" : "预览" }}</span>
+          </div>
         </div>
       </header>
 
       <div class="page-content">
-        <section class="page-intro">
-          <div>
-            <h1>制作 GIF</h1>
-          </div>
-          <div class="runtime-badge"><span></span>{{ isDesktop ? "桌面端就绪" : "需要 Tauri" }}</div>
-        </section>
-
         <div v-if="!isDesktop" class="notice-banner">
           <span class="notice-icon">!</span>
           <div>需要桌面端 · 运行 <code>pnpm tauri:dev</code> 后才能导入本地文件。</div>
         </div>
 
+        <!-- 2. 主工作区：左侧沉浸式画布与时间轴 + 右侧四分栏属性检查器 -->
         <section class="workspace-grid">
           <article class="preview-panel panel-card">
-            <div class="panel-heading">
-              <div>
-                <p class="eyebrow">预览</p>
-                <h2>{{ isPreviewPlaying ? "正在循环播放" : "源画面" }}</h2>
-              </div>
-              <div class="preview-heading-tags">
+            <div class="stage-header-bar">
+              <div class="stage-status-chips">
                 <span v-if="media && isNativeVideoSupported" class="panel-chip chip-playback">
-                  {{ isPreviewPlaying ? "循环中 ⟳" : "可播放预览" }}
+                  {{ isPreviewPlaying ? "▶ 循环播放中" : "可播放预览" }}
                 </span>
-                <span v-else-if="media" class="panel-chip chip-scrub">抽帧预览</span>
-                <span class="panel-chip">{{ exportFormat.toUpperCase() }}</span>
+                <span v-else-if="media" class="panel-chip chip-scrub">高清抽帧预览</span>
+                <span v-else class="panel-chip">等待导入视频</span>
+
+                <span v-if="media" class="panel-chip">
+                  {{ useCrop ? `✂ 裁切 ${crop.width}×${crop.height}` : `${media.width}×${media.height}` }}
+                </span>
+                <span v-if="currentVideoFilter !== 'none'" class="panel-chip chip-filter">
+                  {{ currentFilterOption.icon }} {{ currentFilterOption.label }}
+                </span>
+              </div>
+
+              <!-- 画布快捷图层开关 -->
+              <div class="stage-quick-toggles">
+                <button
+                  type="button"
+                  class="stage-toggle-pill"
+                  :class="{ 'is-on': useCrop }"
+                  title="开启/关闭画面裁切框"
+                  @click="useCrop = !useCrop; if (useCrop) activeInspectorTab = 'canvas'"
+                >
+                  ✂ 裁切
+                </button>
+                <button
+                  type="button"
+                  class="stage-toggle-pill"
+                  :class="{ 'is-on': useText }"
+                  title="开启/关闭文字字幕"
+                  @click="useText = !useText; if (useText) activeInspectorTab = 'text'"
+                >
+                  🔤 文字
+                </button>
+                <button
+                  type="button"
+                  class="stage-toggle-pill"
+                  :class="{ 'is-on': useImage }"
+                  title="开启/关闭贴纸图案"
+                  @click="useImage = !useImage; if (useImage) activeInspectorTab = 'media'"
+                >
+                  🎨 贴纸
+                </button>
               </div>
             </div>
 
@@ -2878,13 +2917,9 @@ onBeforeUnmount(() => {
                       <small>X: {{ crop.x }} Y: {{ crop.y }}</small>
                     </div>
                   </div>
-
                 </div>
 
-                <div class="preview-caption">
-                  {{ useCrop ? `裁切中 · ${crop.width} × ${crop.height} · 可拖拽平移或缩放选区` : `源画面 · ${media.width} × ${media.height} · 支持画布拖拽排版` }}
-                </div>
-                <!-- 真实可点击的播放控制浮层 (仅在原生支持时可播放) -->
+                <!-- 真实可点击的播放控制浮层 -->
                 <div
                   v-if="isNativeVideoSupported"
                   class="preview-play-control"
@@ -2897,59 +2932,63 @@ onBeforeUnmount(() => {
               </template>
               <div v-else class="preview-empty">
                 <div class="empty-mark">✦</div>
-                <strong>暂无视频</strong>
-                <span>导入视频后即可在此预览画面和排版。</span>
+                <strong>导入视频开始创作</strong>
+                <span>支持拖拽画面裁切、添加多行字幕、透明贴纸与音效混流</span>
+                <button
+                  type="button"
+                  class="empty-import-cta"
+                  :disabled="isBusy"
+                  @click="chooseVideo"
+                >
+                  ＋ 选择本地视频文件
+                </button>
+                <small class="empty-formats-hint">支持 MP4 · MOV · WEBM · MKV 等常见视频格式</small>
               </div>
             </div>
 
-            <!-- 底部轻量快捷播放工具条 -->
-            <div v-if="media" class="preview-bottom-toolbar">
-              <div class="preview-toolbar-left">
-                <button
-                  type="button"
-                  class="preview-toolbar-btn"
-                  :class="{ 'is-active': isPreviewPlaying }"
-                  :disabled="!isNativeVideoSupported"
-                  :title="isNativeVideoSupported ? '播放/暂停选定片段 (空格键)' : '当前格式仅支持抽帧预览'"
-                  @click="togglePlayPreview"
-                >
-                  {{ isPreviewPlaying ? "⏸ 暂停" : "▶ 播放片段" }}
-                </button>
-                <button
-                  v-if="media.hasAudio && isNativeVideoSupported"
-                  type="button"
-                  class="preview-toolbar-btn btn-mute"
-                  :class="{ 'is-muted': isPreviewMuted }"
-                  :title="isPreviewMuted ? '点击开启原声音频试听' : '点击静音'"
-                  @click="togglePreviewMute"
-                >
-                  {{ isPreviewMuted ? "🔇 静音" : "🔊 原声试听" }}
-                </button>
-                <span class="preview-range-pill">
-                  ⏱ {{ startSecs.toFixed(2) }}s ~ {{ endSecs.toFixed(2) }}s ({{ selectedDurationLabel }})
-                </span>
-              </div>
-              <div class="preview-toolbar-right">
-                <span class="preview-tip-pill" title="空格键可随时切换播放/暂停">
-                  💡 空格键播放
-                </span>
-              </div>
-            </div>
-
-            <div v-if="media" class="timeline-panel">
-              <div class="timeline-header">
-                <div class="timeline-title">
-                  <span class="timeline-dot"></span>
-                  <strong>时间裁切</strong>
-                  <span class="timeline-badge">{{ selectedDurationLabel }}</span>
+            <!-- 一体化播控与时间裁切栏 (合并播放按钮、精确秒数输入与时间轴滑块) -->
+            <div v-if="media" class="unified-timeline-bar">
+              <div class="timeline-controls-row">
+                <div class="timeline-play-group">
+                  <button
+                    type="button"
+                    class="preview-toolbar-btn"
+                    :class="{ 'is-active': isPreviewPlaying }"
+                    :disabled="!isNativeVideoSupported"
+                    :title="isNativeVideoSupported ? '播放/暂停选定片段 (空格键)' : '当前格式仅支持抽帧预览'"
+                    @click="togglePlayPreview"
+                  >
+                    {{ isPreviewPlaying ? "⏸ 暂停" : "▶ 播放" }}
+                  </button>
+                  <button
+                    v-if="media.hasAudio && isNativeVideoSupported"
+                    type="button"
+                    class="preview-toolbar-btn btn-mute"
+                    :class="{ 'is-muted': isPreviewMuted }"
+                    :title="isPreviewMuted ? '点击开启原声音频试听' : '点击静音'"
+                    @click="togglePreviewMute"
+                  >
+                    {{ isPreviewMuted ? "🔇 静音" : "🔊 原声" }}
+                  </button>
                 </div>
-                <div class="timeline-time-display">
-                  <span>{{ startSecs.toFixed(2) }}s</span>
-                  <span class="timeline-sep">至</span>
-                  <span>{{ endSecs.toFixed(2) }}s</span>
+
+                <div class="timeline-inline-inputs">
+                  <label class="inline-time-field" title="片段开始时间（秒）">
+                    <span>起</span>
+                    <input v-model.number="startSecs" type="number" min="0" step="0.1" />
+                    <small>s</small>
+                  </label>
+                  <span class="timeline-sep">→</span>
+                  <label class="inline-time-field" title="片段结束时间（秒）">
+                    <span>止</span>
+                    <input v-model.number="endSecs" type="number" min="0.1" step="0.1" :max="mediaDuration || undefined" />
+                    <small>s</small>
+                  </label>
                   <span class="timeline-total">/ {{ mediaDurationLabel }}</span>
+                  <span class="timeline-badge">截取 {{ selectedDurationLabel }}</span>
                 </div>
               </div>
+
               <div
                 ref="timelineTrackRef"
                 class="timeline-track"
@@ -2987,574 +3026,627 @@ onBeforeUnmount(() => {
                 </div>
               </div>
             </div>
-
-            <div class="media-summary">
-              <div class="media-file">
-                <span class="file-icon">▧</span>
-                <div>
-                    <strong>{{ media?.fileName ?? "暂无来源" }}</strong>
-                    <small>{{ media ? `${media.format} · ${media.width} × ${media.height}` : "本地视频" }}</small>
-                </div>
-              </div>
-              <div class="media-stats">
-                <span><b>{{ mediaDurationLabel }}</b> 时长</span>
-                <span><b>{{ mediaFpsLabel }}</b></span>
-              </div>
-            </div>
           </article>
 
+          <!-- 右侧：四分栏模块化属性检查器 -->
           <aside class="controls-panel panel-card">
-            <div class="panel-heading compact-heading">
-              <div>
-                <p class="eyebrow">编辑</p>
-                <h2>参数</h2>
-              </div>
-              <span class="step-number">02</span>
-            </div>
+            <nav class="inspector-tabs" aria-label="编辑属性分类">
+              <button
+                type="button"
+                class="inspector-tab-btn"
+                :class="{ active: activeInspectorTab === 'canvas' }"
+                @click="activeInspectorTab = 'canvas'"
+              >
+                <span>📐 画面</span>
+                <i v-if="useCrop || currentVideoFilter !== 'none'" class="tab-active-dot"></i>
+              </button>
+              <button
+                type="button"
+                class="inspector-tab-btn"
+                :class="{ active: activeInspectorTab === 'text' }"
+                @click="activeInspectorTab = 'text'"
+              >
+                <span>🔤 文字</span>
+                <i v-if="useText" class="tab-active-dot"></i>
+              </button>
+              <button
+                type="button"
+                class="inspector-tab-btn"
+                :class="{ active: activeInspectorTab === 'media' }"
+                @click="activeInspectorTab = 'media'"
+              >
+                <span>🎨 贴纸·音效</span>
+                <i v-if="(useImage && imagePath) || bgmPath" class="tab-active-dot"></i>
+              </button>
+              <button
+                type="button"
+                class="inspector-tab-btn"
+                :class="{ active: activeInspectorTab === 'export' }"
+                @click="activeInspectorTab = 'export'"
+              >
+                <span>🚀 导出</span>
+                <small class="tab-format-tag">{{ exportFormat.toUpperCase() }}</small>
+              </button>
+            </nav>
 
-            <button class="file-picker" type="button" :disabled="isBusy" @click="chooseVideo">
-              <span class="picker-icon">↑</span>
-              <span>
-                <strong>{{ media ? "替换视频" : "导入视频" }}</strong>
-                <small>{{ media ? "选择其他视频" : "MP4 · MOV · WEBM" }}</small>
-              </span>
-              <span class="picker-arrow">→</span>
-            </button>
+            <div class="inspector-body">
+              <!-- ==================== Tab 1: 画面 (构图裁切 & 滤镜调色) ==================== -->
+              <div v-if="activeInspectorTab === 'canvas'" class="inspector-pane">
+                <div class="inspector-card">
+                  <div class="inspector-card-header">
+                    <label class="toggle-row">
+                      <input v-model="useCrop" type="checkbox" />
+                      <span class="toggle-ui"></span>
+                      <strong>画面区域裁切</strong>
+                    </label>
+                    <span v-if="useCrop" class="card-status-pill">{{ crop.width }} × {{ crop.height }}</span>
+                  </div>
 
-            <div class="control-section">
-              <div class="section-label"><span>01</span> 时间</div>
-              <div class="field-grid two-up">
-                <label class="field"><span>开始 · 秒</span><input v-model.number="startSecs" type="number" min="0" step="0.1" /></label>
-                <label class="field"><span>结束 · 秒</span><input v-model.number="endSecs" type="number" min="0.1" step="0.1" :max="mediaDuration || undefined" /></label>
-              </div>
-            </div>
+                  <template v-if="useCrop">
+                    <p class="inspector-hint">可在左侧画布直接拖拽九宫格选框，或选用常用比例：</p>
+                    <div class="crop-ratio-grid">
+                      <button type="button" class="crop-mini-btn" @click="cropSquare">1:1 方形</button>
+                      <button type="button" class="crop-mini-btn" @click="crop4x3">4:3 经典</button>
+                      <button type="button" class="crop-mini-btn" @click="crop16x9">16:9 横屏</button>
+                      <button type="button" class="crop-mini-btn" @click="crop9x16">9:16 竖屏</button>
+                      <button type="button" class="crop-mini-btn" @click="cropCenter">居中对齐</button>
+                      <button type="button" class="crop-mini-btn" @click="cropReset">铺满原画</button>
+                    </div>
 
-            <div class="control-section">
-              <div class="section-label-row">
-                <div class="section-label"><span>02</span> 输出预设</div>
-                <span class="preset-tag-info">{{ currentPresetInfo.name }} · {{ currentPresetInfo.badge }}</span>
-              </div>
-              <div class="preset-pills">
-                <button
-                  v-for="p in PRESETS"
-                  :key="p.id"
-                  type="button"
-                  class="preset-pill"
-                  :class="{ active: selectedPresetId === p.id }"
-                  :title="p.description"
-                  @click="applyPreset(p)"
-                >
-                  <span class="preset-name">{{ p.name }}</span>
-                  <span class="preset-badge">{{ p.badge }}</span>
-                </button>
-                <button
-                  type="button"
-                  class="preset-pill"
-                  :class="{ active: selectedPresetId === 'custom' }"
-                  title="手动调整输出参数"
-                  @click="selectedPresetId = 'custom'"
-                >
-                  <span class="preset-name">自定义</span>
-                  <span class="preset-badge">自定</span>
-                </button>
-              </div>
-              <div class="field-grid two-up">
-                <label class="field"><span>宽度 · 像素</span><input v-model.number="outputWidth" type="number" min="32" max="1920" step="1" @input="onManualParameterChange" /></label>
-                <label class="field"><span>帧率 · FPS</span><input v-model.number="fps" type="number" min="1" max="60" step="1" @input="onManualParameterChange" /></label>
-              </div>
-              <div class="crop-header-row">
-                <label class="toggle-row"><input v-model="useCrop" type="checkbox" /><span class="toggle-ui"></span><span>裁切</span><em v-if="useCrop">{{ crop.width }} × {{ crop.height }}</em></label>
-                <div v-if="useCrop" class="crop-quick-actions">
-                  <button type="button" class="crop-mini-btn" title="裁切选框居中" @click="cropCenter">居中</button>
-                  <button type="button" class="crop-mini-btn" title="铺满全画面" @click="cropReset">铺满</button>
-                  <button type="button" class="crop-mini-btn" title="1:1 正方形比例" @click="cropSquare">1:1</button>
-                  <button type="button" class="crop-mini-btn" title="16:9 横屏比例" @click="crop16x9">16:9</button>
-                  <button type="button" class="crop-mini-btn" title="9:16 竖屏比例" @click="crop9x16">9:16</button>
-                  <button type="button" class="crop-mini-btn" title="4:3 经典比例" @click="crop4x3">4:3</button>
-                </div>
-              </div>
-              <div v-if="useCrop" class="field-grid four-up crop-grid">
-                <label class="field"><span>X</span><input v-model.number="crop.x" type="number" min="0" step="1" /></label>
-                <label class="field"><span>Y</span><input v-model.number="crop.y" type="number" min="0" step="1" /></label>
-                <label class="field"><span>W</span><input v-model.number="crop.width" type="number" min="20" step="1" /></label>
-                <label class="field"><span>H</span><input v-model.number="crop.height" type="number" min="20" step="1" /></label>
-              </div>
-
-              <!-- 画风特效与速度调节 -->
-              <div class="video-filter-section">
-                <div class="filter-header-row">
-                  <span class="filter-header-title">画风特效</span>
-                  <span class="filter-current-tag" :class="currentVideoFilter">
-                    {{ currentFilterOption.icon }} {{ currentFilterOption.label }} · {{ currentFilterOption.badge }}
-                  </span>
-                </div>
-                <div class="filter-pills-grid">
-                  <button
-                    v-for="f in VIDEO_FILTERS"
-                    :key="f.key"
-                    type="button"
-                    class="video-filter-pill"
-                    :class="{ active: currentVideoFilter === f.key, [`filter-${f.key}`]: true }"
-                    :title="`${f.label} (${f.badge})`"
-                    @click="setVideoFilter(f.key)"
-                  >
-                    <span class="filter-pill-icon">{{ f.icon }}</span>
-                    <span class="filter-pill-label">{{ f.label }}</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div class="control-section">
-              <div class="section-label-row">
-                <div class="section-label"><span>03</span> 叠加</div>
-                <div v-if="useText" class="template-quick-actions">
-                  <button type="button" class="template-link-btn" title="浏览表情包排版模板库" @click="openTemplatesDrawer">
-                    📑 套用模板
-                  </button>
-                  <button type="button" class="template-link-btn" title="将当前文字排版存为我的模板" @click="openSaveTemplateModal">
-                    ＋ 存为模板
-                  </button>
-                </div>
-              </div>
-              <label class="toggle-row"><input v-model="useText" type="checkbox" /><span class="toggle-ui"></span><span>文字</span></label>
-              <div v-if="useText" class="overlay-fields">
-                <div class="layer-tabs-bar">
-                  <div class="layer-tabs-list">
                     <button
-                      v-for="(layer, index) in textLayers"
-                      :key="layer.id"
                       type="button"
-                      class="layer-tab-btn"
-                      :class="{ 'is-active': activeLayerId === layer.id, 'is-hidden': !layer.visible }"
-                      @click="activeLayerId = layer.id"
+                      class="collapsible-trigger"
+                      @click="showExactCropCoords = !showExactCropCoords"
                     >
-                      <span class="tab-tag">T{{ index + 1 }}</span>
-                      <span class="tab-snippet">{{ layer.text || '未命名' }}</span>
-                      <span
-                        class="layer-action-icon"
-                        role="button"
-                        :title="layer.visible ? '隐藏此图层' : '显示此图层'"
-                        @click.stop="toggleLayerVisibility(layer)"
-                      >
-                        {{ layer.visible ? '👁' : '🚫' }}
-                      </span>
-                      <span
-                        v-if="textLayers.length > 1"
-                        class="layer-action-icon del-icon"
-                        role="button"
-                        title="删除图层"
-                        @click.stop="removeTextLayer(layer.id)"
-                      >
-                        ×
-                      </span>
+                      <span>📍 精确像素坐标 (X / Y / 宽 / 高)</span>
+                      <span class="chevron">{{ showExactCropCoords ? "▾" : "▸" }}</span>
+                    </button>
+                    <div v-if="showExactCropCoords" class="field-grid four-up collapsible-content">
+                      <label class="field"><span>X</span><input v-model.number="crop.x" type="number" min="0" step="1" /></label>
+                      <label class="field"><span>Y</span><input v-model.number="crop.y" type="number" min="0" step="1" /></label>
+                      <label class="field"><span>宽 W</span><input v-model.number="crop.width" type="number" min="20" step="1" /></label>
+                      <label class="field"><span>高 H</span><input v-model.number="crop.height" type="number" min="20" step="1" /></label>
+                    </div>
+                  </template>
+                  <p v-else class="inspector-empty-note">保持源视频完整构图，开启后可自由框选局部画面。</p>
+                </div>
+
+                <div class="inspector-card">
+                  <div class="inspector-card-header">
+                    <strong>全局画风与变速</strong>
+                    <span class="filter-current-tag" :class="currentVideoFilter">
+                      {{ currentFilterOption.icon }} {{ currentFilterOption.label }} · {{ currentFilterOption.badge }}
+                    </span>
+                  </div>
+                  <div class="filter-pills-grid">
+                    <button
+                      v-for="f in VIDEO_FILTERS"
+                      :key="f.key"
+                      type="button"
+                      class="video-filter-pill"
+                      :class="{ active: currentVideoFilter === f.key, [`filter-${f.key}`]: true }"
+                      :title="`${f.label} (${f.badge})`"
+                      @click="setVideoFilter(f.key)"
+                    >
+                      <span class="filter-pill-icon">{{ f.icon }}</span>
+                      <span class="filter-pill-label">{{ f.label }}</span>
                     </button>
                   </div>
-                  <button
-                    v-if="textLayers.length < 4"
-                    type="button"
-                    class="add-layer-btn"
-                    title="添加文字图层（最多 4 个）"
-                    @click="addTextLayer"
-                  >
-                    ＋ 添加
-                  </button>
                 </div>
-                <label class="field field-wide"><span>内容</span><input v-model="text" type="text" maxlength="80" placeholder="输入文字" /></label>
-                <div class="field-grid four-up">
-                  <label class="field"><span>X</span><input v-model.number="textX" type="number" min="0" step="1" /></label>
-                  <label class="field"><span>Y</span><input v-model.number="textY" type="number" min="0" step="1" /></label>
-                  <label class="field"><span>字号</span><input v-model.number="textSize" type="number" min="8" max="192" step="1" /></label>
-                  <label class="field color-field"><span>颜色</span><input v-model="textColor" type="color" /></label>
-                </div>
-                <div class="field-grid four-up text-style-grid">
-                  <label class="field"><span>描边宽</span><input v-model.number="textStrokeWidth" type="number" min="0" max="12" step="1" /></label>
-                  <label class="field color-field"><span>描边色</span><input v-model="textStrokeColor" type="color" /></label>
-                  <label class="field toggle-inline-field">
-                    <span>底框</span>
-                    <label class="mini-toggle-row">
-                      <input v-model="textUseBox" type="checkbox" />
-                      <span class="toggle-ui mini-ui"></span>
-                      <small>{{ textUseBox ? "开启" : "关闭" }}</small>
+              </div>
+
+              <!-- ==================== Tab 2: 文字 (多图层字幕 & 模板排版) ==================== -->
+              <div v-else-if="activeInspectorTab === 'text'" class="inspector-pane">
+                <div class="inspector-card">
+                  <div class="inspector-card-header">
+                    <label class="toggle-row">
+                      <input v-model="useText" type="checkbox" />
+                      <span class="toggle-ui"></span>
+                      <strong>文字字幕叠加</strong>
                     </label>
-                  </label>
-                  <label v-if="textUseBox" class="field color-field"><span>底色</span><input v-model="textBoxColor" type="color" /></label>
-                </div>
-                <div v-if="textUseBox" class="box-opacity-row">
-                  <span class="opacity-label">底框不透明度</span>
-                  <input v-model.number="textBoxOpacity" type="range" min="0.1" max="1.0" step="0.05" class="opacity-slider" />
-                  <span class="opacity-value">{{ Math.round(textBoxOpacity * 100) }}%</span>
-                </div>
-                <!-- 高级文字排版效果 (advanced-text-effects) -->
-                <div class="advanced-effects-panel">
-                  <!-- 旋转角度 -->
-                  <div class="effect-control-row">
-                    <div class="effect-label-row">
-                      <span class="effect-title">自由旋转</span>
-                      <span class="effect-value">{{ textRotation }}°</span>
-                    </div>
-                    <div class="rotation-slider-bar">
-                      <input
-                        v-model.number="textRotation"
-                        type="range"
-                        min="-180"
-                        max="180"
-                        step="1"
-                        class="effect-range-slider"
-                      />
-                      <div class="rotation-preset-pills">
-                        <button
-                          type="button"
-                          class="rot-pill"
-                          :class="{ active: textRotation === 0 }"
-                          title="重置为水平 0°"
-                          @click="setRotationPreset(0)"
-                        >
-                          0°
-                        </button>
-                        <button
-                          type="button"
-                          class="rot-pill"
-                          :class="{ active: textRotation === -45 }"
-                          title="-45°"
-                          @click="setRotationPreset(-45)"
-                        >
-                          -45°
-                        </button>
-                        <button
-                          type="button"
-                          class="rot-pill"
-                          :class="{ active: textRotation === -15 }"
-                          title="-15°"
-                          @click="setRotationPreset(-15)"
-                        >
-                          -15°
-                        </button>
-                        <button
-                          type="button"
-                          class="rot-pill"
-                          :class="{ active: textRotation === 15 }"
-                          title="+15°"
-                          @click="setRotationPreset(15)"
-                        >
-                          +15°
-                        </button>
-                        <button
-                          type="button"
-                          class="rot-pill"
-                          :class="{ active: textRotation === 45 }"
-                          title="+45°"
-                          @click="setRotationPreset(45)"
-                        >
-                          +45°
-                        </button>
-                        <button
-                          type="button"
-                          class="rot-pill"
-                          :class="{ active: textRotation === 90 }"
-                          title="90° 垂直"
-                          @click="setRotationPreset(90)"
-                        >
-                          90°
-                        </button>
-                      </div>
+                    <div class="template-quick-actions">
+                      <button type="button" class="template-link-btn" title="浏览表情包排版模板库" @click="openTemplatesDrawer">
+                        📑 模板库
+                      </button>
+                      <button v-if="useText" type="button" class="template-link-btn" title="将当前文字样式存为模板" @click="openSaveTemplateModal">
+                        ＋ 存为模板
+                      </button>
                     </div>
                   </div>
 
-                  <!-- 弧形弯曲与斜体/立体阴影 -->
-                  <div class="advanced-style-grid">
-                    <!-- 弧形弯曲 -->
-                    <div class="effect-control-col">
-                      <div class="effect-label-row">
-                        <span class="effect-title">弧形弯曲</span>
-                        <span class="effect-value">
-                          {{ textArcRadius === 0 ? "平直 —" : textArcRadius > 0 ? `向上拱 ${textArcRadius}` : `向下凹 ${textArcRadius}` }}
-                        </span>
-                      </div>
-                      <div class="arc-slider-wrap">
-                        <input
-                          v-model.number="textArcRadius"
-                          type="range"
-                          min="-100"
-                          max="100"
-                          step="5"
-                          class="effect-range-slider"
-                          title="双击归零"
-                          @dblclick="textArcRadius = 0"
-                        />
+                  <div v-if="useText" class="text-editor-stack">
+                    <!-- 多图层切换栏 -->
+                    <div class="layer-tabs-bar">
+                      <div class="layer-tabs-list">
                         <button
-                          v-if="textArcRadius !== 0"
+                          v-for="(layer, index) in textLayers"
+                          :key="layer.id"
                           type="button"
-                          class="mini-reset-btn"
-                          title="归零平直"
-                          @click="textArcRadius = 0"
+                          class="layer-tab-btn"
+                          :class="{ 'is-active': activeLayerId === layer.id, 'is-hidden': !layer.visible }"
+                          @click="activeLayerId = layer.id"
                         >
-                          重置
+                          <span class="tab-tag">T{{ index + 1 }}</span>
+                          <span class="tab-snippet">{{ layer.text || '未命名' }}</span>
+                          <span
+                            class="layer-action-icon"
+                            role="button"
+                            :title="layer.visible ? '隐藏此图层' : '显示此图层'"
+                            @click.stop="toggleLayerVisibility(layer)"
+                          >
+                            {{ layer.visible ? '👁' : '🚫' }}
+                          </span>
+                          <span
+                            v-if="textLayers.length > 1"
+                            class="layer-action-icon del-icon"
+                            role="button"
+                            title="删除图层"
+                            @click.stop="removeTextLayer(layer.id)"
+                          >
+                            ×
+                          </span>
                         </button>
                       </div>
+                      <button
+                        v-if="textLayers.length < 4"
+                        type="button"
+                        class="add-layer-btn"
+                        title="添加文字图层（最多 4 个）"
+                        @click="addTextLayer"
+                      >
+                        ＋ 图层
+                      </button>
                     </div>
 
-                    <!-- 动感斜体与立体阴影 -->
-                    <div class="effect-control-col">
-                      <div class="effect-label-row">
-                        <span class="effect-title">斜体与立体阴影</span>
+                    <!-- 台词内容输入 -->
+                    <label class="field">
+                      <span>台词内容（可在画布直接拖拽位置）</span>
+                      <input v-model="text" type="text" maxlength="80" placeholder="输入表情包台词…" />
+                    </label>
+
+                    <!-- 核心外观：字号、文字色、描边宽、描边色 -->
+                    <div class="field-grid four-up">
+                      <label class="field"><span>字号</span><input v-model.number="textSize" type="number" min="8" max="192" step="1" /></label>
+                      <label class="field color-field"><span>文字色</span><input v-model="textColor" type="color" /></label>
+                      <label class="field"><span>描边宽</span><input v-model.number="textStrokeWidth" type="number" min="0" max="12" step="1" /></label>
+                      <label class="field color-field"><span>描边色</span><input v-model="textStrokeColor" type="color" /></label>
+                    </div>
+
+                    <!-- 字幕背景底框 -->
+                    <div class="box-style-bar">
+                      <label class="mini-toggle-row">
+                        <input v-model="textUseBox" type="checkbox" />
+                        <span class="toggle-ui mini-ui"></span>
+                        <span>字幕背景底框</span>
+                      </label>
+                      <template v-if="textUseBox">
+                        <input v-model="textBoxColor" type="color" class="inline-color-input" title="底框颜色" />
+                        <input v-model.number="textBoxOpacity" type="range" min="0.1" max="1.0" step="0.05" class="opacity-slider" title="底框不透明度" />
+                        <span class="opacity-value">{{ Math.round(textBoxOpacity * 100) }}%</span>
+                      </template>
+                    </div>
+
+                    <!-- 折叠面板 1：高级变形与立体阴影 -->
+                    <button
+                      type="button"
+                      class="collapsible-trigger"
+                      :class="{ 'has-active': hasAdvancedTextActive }"
+                      @click="showAdvancedText = !showAdvancedText"
+                    >
+                      <span>✨ 高级变形与阴影 (旋转 / 弧形 / 斜体 / 阴影)</span>
+                      <span class="trigger-right">
+                        <em v-if="hasAdvancedTextActive" class="active-tag">已启用</em>
+                        <span class="chevron">{{ showAdvancedText ? "▾" : "▸" }}</span>
+                      </span>
+                    </button>
+
+                    <div v-if="showAdvancedText" class="advanced-effects-panel">
+                      <div class="effect-control-row">
+                        <div class="effect-label-row">
+                          <span class="effect-title">自由旋转</span>
+                          <span class="effect-value">{{ textRotation }}°</span>
+                        </div>
+                        <div class="rotation-slider-bar">
+                          <input
+                            v-model.number="textRotation"
+                            type="range"
+                            min="-180"
+                            max="180"
+                            step="1"
+                            class="effect-range-slider"
+                          />
+                          <div class="rotation-preset-pills">
+                            <button type="button" class="rot-pill" :class="{ active: textRotation === 0 }" @click="setRotationPreset(0)">0°</button>
+                            <button type="button" class="rot-pill" :class="{ active: textRotation === -45 }" @click="setRotationPreset(-45)">-45°</button>
+                            <button type="button" class="rot-pill" :class="{ active: textRotation === -15 }" @click="setRotationPreset(-15)">-15°</button>
+                            <button type="button" class="rot-pill" :class="{ active: textRotation === 15 }" @click="setRotationPreset(15)">+15°</button>
+                            <button type="button" class="rot-pill" :class="{ active: textRotation === 45 }" @click="setRotationPreset(45)">+45°</button>
+                            <button type="button" class="rot-pill" :class="{ active: textRotation === 90 }" @click="setRotationPreset(90)">90°</button>
+                          </div>
+                        </div>
                       </div>
-                      <div class="style-toggle-buttons">
-                        <button
-                          type="button"
-                          class="italic-toggle-btn"
-                          :class="{ 'is-active': textIsItalic }"
-                          title="切换 12° 动感斜体排版"
-                          @click="textIsItalic = !textIsItalic"
-                        >
-                          <span class="italic-glyph">𝐼</span> 斜体
-                        </button>
-                        <div class="shadow-controls-inline">
-                          <label class="field color-field shadow-color-field" title="阴影颜色">
-                            <input v-model="textShadowColor" type="color" />
-                          </label>
-                          <label class="shadow-offset-label" title="立体阴影偏移距离">
+
+                      <div class="advanced-style-grid">
+                        <div class="effect-control-col">
+                          <div class="effect-label-row">
+                            <span class="effect-title">弧形弯曲</span>
+                            <span class="effect-value">
+                              {{ textArcRadius === 0 ? "平直" : textArcRadius > 0 ? `上拱 ${textArcRadius}` : `下凹 ${textArcRadius}` }}
+                            </span>
+                          </div>
+                          <div class="arc-slider-wrap">
                             <input
-                              v-model.number="textShadowOffset"
-                              type="number"
-                              min="0"
-                              max="20"
-                              step="1"
-                              class="shadow-offset-input"
-                              placeholder="0"
+                              v-model.number="textArcRadius"
+                              type="range"
+                              min="-100"
+                              max="100"
+                              step="5"
+                              class="effect-range-slider"
+                              title="双击归零"
+                              @dblclick="textArcRadius = 0"
                             />
-                            <small>px</small>
-                          </label>
+                            <button v-if="textArcRadius !== 0" type="button" class="mini-reset-btn" @click="textArcRadius = 0">重置</button>
+                          </div>
+                        </div>
+
+                        <div class="effect-control-col">
+                          <div class="effect-label-row">
+                            <span class="effect-title">斜体与阴影</span>
+                          </div>
+                          <div class="style-toggle-buttons">
+                            <button
+                              type="button"
+                              class="italic-toggle-btn"
+                              :class="{ 'is-active': textIsItalic }"
+                              @click="textIsItalic = !textIsItalic"
+                            >
+                              <span class="italic-glyph">𝐼</span> 斜体
+                            </button>
+                            <div class="shadow-controls-inline">
+                              <label class="field color-field shadow-color-field" title="阴影颜色">
+                                <input v-model="textShadowColor" type="color" />
+                              </label>
+                              <label class="shadow-offset-label" title="阴影偏移距离">
+                                <input
+                                  v-model.number="textShadowOffset"
+                                  type="number"
+                                  min="0"
+                                  max="20"
+                                  step="1"
+                                  class="shadow-offset-input"
+                                  placeholder="0"
+                                />
+                                <small>px</small>
+                              </label>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
+
+                    <!-- 折叠面板 2：精确坐标 -->
+                    <button
+                      type="button"
+                      class="collapsible-trigger"
+                      @click="showExactTextCoords = !showExactTextCoords"
+                    >
+                      <span>📍 精确位置坐标 (X: {{ textX }}, Y: {{ textY }})</span>
+                      <span class="chevron">{{ showExactTextCoords ? "▾" : "▸" }}</span>
+                    </button>
+                    <div v-if="showExactTextCoords" class="field-grid two-up collapsible-content">
+                      <label class="field"><span>横坐标 X</span><input v-model.number="textX" type="number" min="0" step="1" /></label>
+                      <label class="field"><span>纵坐标 Y</span><input v-model.number="textY" type="number" min="0" step="1" /></label>
+                    </div>
                   </div>
+                  <p v-else class="inspector-empty-note">开启后可添加最多 4 个独立文字图层，或点击右上角「模板库」一键套用经典字幕。</p>
                 </div>
-              </div>
-              <div class="toggle-row image-row">
-                <label class="toggle-label"><input v-model="useImage" type="checkbox" /><span class="toggle-ui"></span><span>贴纸图案</span></label>
-                <div class="sticker-header-actions">
-                  <button class="inline-button sticker-lib-btn" type="button" title="从内置经典表情贴纸库选择" @click="openStickersDrawer">🎨 贴纸素材</button>
-                  <button class="inline-button" type="button" @click="chooseImage">{{ imagePath ? "更换本地" : "本地 PNG" }}</button>
-                </div>
-              </div>
-              <div v-if="useImage && imagePath" class="overlay-fields">
-                <div class="selected-file sticker-selected-chip">
-                  <img v-if="imagePreviewUrl" :src="imagePreviewUrl" class="sticker-chip-icon" alt="贴纸" />
-                  <span v-else class="sticker-chip-badge">PNG</span>
-                  <strong class="sticker-chip-filename">{{ imagePath.split(/[\\/]/).pop() }}</strong>
-                  <button type="button" aria-label="移除贴图" @click="clearImage">×</button>
-                </div>
-                <div class="field-grid three-up">
-                  <label class="field"><span>X</span><input v-model.number="imageX" type="number" min="0" step="1" /></label>
-                  <label class="field"><span>Y</span><input v-model.number="imageY" type="number" min="0" step="1" /></label>
-                  <label class="field"><span>宽度 (W)</span><input v-model.number="imageWidth" type="number" min="20" max="1920" step="1" /></label>
-                </div>
-                <div class="sticker-scale-presets-bar">
-                  <span class="scale-preset-label">比例缩放</span>
-                  <div class="scale-preset-buttons">
-                    <button type="button" class="scale-preset-btn" title="缩小至 60%" @click="scaleImageTo(0.6)">60%</button>
-                    <button type="button" class="scale-preset-btn" title="原始大小 100%" @click="scaleImageTo(1.0)">100%</button>
-                    <button type="button" class="scale-preset-btn" title="放大至 150%" @click="scaleImageTo(1.5)">150%</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="control-section output-section">
-              <div class="section-label-row">
-                <div class="section-label"><span>04</span> 格式与保存</div>
-                <span class="format-hint">{{ exportFormat === 'mp4' ? '声画短视频·原声有戏' : exportFormat === 'avif' ? '超高压缩比·新一代' : exportFormat === 'webp' ? '小体积·真彩色' : '通用兼容' }}</span>
-              </div>
-              <div class="format-pills">
-                <button
-                  type="button"
-                  class="format-pill"
-                  :class="{ active: exportFormat === 'gif' }"
-                  title="经典 GIF 动图格式，兼容所有聊天软件与平台"
-                  @click="setExportFormat('gif')"
-                >
-                  <span class="format-pill-name">GIF</span>
-                  <span class="format-pill-sub">经典通用</span>
-                </button>
-                <button
-                  type="button"
-                  class="format-pill"
-                  :class="{ active: exportFormat === 'webp' }"
-                  title="现代 WebP 动图格式，体积缩小 50% 以上，极速导出"
-                  @click="setExportFormat('webp')"
-                >
-                  <span class="format-pill-name">WebP</span>
-                  <span class="format-pill-badge">小体积</span>
-                </button>
-                <button
-                  type="button"
-                  class="format-pill pill-avif"
-                  :class="{ active: exportFormat === 'avif' }"
-                  title="新一代 AVIF 动图格式，体积比 WebP 更小 20%~30%，色彩细节极佳"
-                  @click="setExportFormat('avif')"
-                >
-                  <span class="format-pill-name">AVIF</span>
-                  <span class="format-pill-badge badge-avif">超压缩</span>
-                </button>
-                <button
-                  type="button"
-                  class="format-pill pill-mp4"
-                  :class="{ active: exportFormat === 'mp4' }"
-                  title="MP4 短视频格式，保留原声音频，支持发送微信/小红书/抖音等平台"
-                  @click="setExportFormat('mp4')"
-                >
-                  <span class="format-pill-name">MP4</span>
-                  <span class="format-pill-badge badge-mp4">带原声</span>
-                </button>
               </div>
 
-              <!-- 当格式为 MP4 时呈现背景音乐与音效混流控制区 -->
-              <div v-if="exportFormat === 'mp4'" class="audio-mixing-panel">
-                <div class="audio-switch-row">
-                  <label class="audio-switch-label" title="开启后导出的 MP4 将包含源片声音与变速同步音效">
-                    <input type="checkbox" v-model="includeAudio" class="audio-switch-checkbox" />
-                    <span class="audio-switch-text">
-                      <span class="audio-switch-title">🔊 保留原声音频</span>
-                      <span class="audio-switch-sub">混流 AAC 音轨，且声画同步变速</span>
-                    </span>
-                  </label>
-                  <span v-if="includeAudio" class="audio-vol-badge">{{ origAudioVolume }}%</span>
-                </div>
-
-                <div v-if="includeAudio" class="audio-slider-row">
-                  <span class="audio-slider-label">原声音量</span>
-                  <input
-                    type="range"
-                    v-model.number="origAudioVolume"
-                    min="0"
-                    max="200"
-                    step="5"
-                    class="audio-slider"
-                  />
-                </div>
-
-                <!-- BGM / 音效叠加状态 -->
-                <div class="bgm-control-section">
-                  <div class="bgm-header-row">
-                    <span class="bgm-section-title">🎵 音效 / 背景音乐</span>
-                    <div class="bgm-action-btns">
-                      <button
-                        type="button"
-                        class="bgm-lib-btn"
-                        title="打开音效素材库选用经典二创音效"
-                        @click="openSfxDrawer"
-                      >
-                        音效库
-                      </button>
-                      <button
-                        type="button"
-                        class="bgm-pick-btn"
-                        title="选择本地 MP3 / WAV / M4A / AAC / OGG 文件"
-                        @click="handlePickAudio"
-                      >
-                        本地音频…
-                      </button>
+              <!-- ==================== Tab 3: 贴纸与音效 (素材叠加) ==================== -->
+              <div v-else-if="activeInspectorTab === 'media'" class="inspector-pane">
+                <!-- 贴纸卡片 -->
+                <div class="inspector-card">
+                  <div class="inspector-card-header">
+                    <label class="toggle-row">
+                      <input v-model="useImage" type="checkbox" />
+                      <span class="toggle-ui"></span>
+                      <strong>透明表情贴纸</strong>
+                    </label>
+                    <div class="sticker-header-actions">
+                      <button class="inline-button sticker-lib-btn" type="button" @click="openStickersDrawer">🎨 贴纸库</button>
+                      <button class="inline-button" type="button" @click="chooseImage">{{ imagePath ? "换 PNG" : "本地 PNG" }}</button>
                     </div>
                   </div>
 
-                  <div v-if="bgmPath" class="bgm-active-card">
-                    <div class="bgm-active-info">
-                      <button
-                        type="button"
-                        class="bgm-play-btn"
-                        :title="isPlayingActiveBgm ? '暂停试听' : '试听当前音效'"
-                        @click="togglePlayActiveBgm"
-                      >
-                        {{ isPlayingActiveBgm ? '⏸' : '▶' }}
-                      </button>
-                      <div class="bgm-active-meta">
-                        <span class="bgm-active-name" :title="bgmName">{{ bgmName }}</span>
-                        <span v-if="bgmDuration > 0" class="bgm-active-dur">{{ bgmDuration }}s</span>
+                  <div v-if="useImage && imagePath" class="sticker-editor-stack">
+                    <div class="selected-file sticker-selected-chip">
+                      <img v-if="imagePreviewUrl" :src="imagePreviewUrl" class="sticker-chip-icon" alt="贴纸" />
+                      <span v-else class="sticker-chip-badge">PNG</span>
+                      <strong class="sticker-chip-filename">{{ imagePath.split(/[\\/]/).pop() }}</strong>
+                      <button type="button" aria-label="移除贴图" @click="clearImage">×</button>
+                    </div>
+
+                    <div class="sticker-scale-presets-bar">
+                      <span class="scale-preset-label">尺寸 ({{ imageWidth }}px)</span>
+                      <div class="scale-preset-buttons">
+                        <button type="button" class="scale-preset-btn" @click="scaleImageTo(0.6)">60%</button>
+                        <button type="button" class="scale-preset-btn" @click="scaleImageTo(1.0)">100%</button>
+                        <button type="button" class="scale-preset-btn" @click="scaleImageTo(1.5)">150%</button>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      class="collapsible-trigger"
+                      @click="showExactStickerCoords = !showExactStickerCoords"
+                    >
+                      <span>📍 精确位置与宽度 (X: {{ imageX }}, Y: {{ imageY }})</span>
+                      <span class="chevron">{{ showExactStickerCoords ? "▾" : "▸" }}</span>
+                    </button>
+                    <div v-if="showExactStickerCoords" class="field-grid three-up collapsible-content">
+                      <label class="field"><span>X</span><input v-model.number="imageX" type="number" min="0" step="1" /></label>
+                      <label class="field"><span>Y</span><input v-model.number="imageY" type="number" min="0" step="1" /></label>
+                      <label class="field"><span>宽 W</span><input v-model.number="imageWidth" type="number" min="20" max="1920" step="1" /></label>
+                    </div>
+                  </div>
+                  <p v-else class="inspector-empty-note">点击「贴纸库」选用 18 款内置免抠贴纸，或导入本地透明 PNG。</p>
+                </div>
+
+                <!-- 声音与音效混流卡片 -->
+                <div class="inspector-card">
+                  <div class="inspector-card-header">
+                    <strong>🎵 配乐与音效混流</strong>
+                    <button
+                      v-if="exportFormat !== 'mp4'"
+                      type="button"
+                      class="mp4-switch-pill"
+                      title="声音需要 MP4 短视频格式承载，点击一键切换"
+                      @click="setExportFormat('mp4')"
+                    >
+                      切换为 MP4 启用声音 ↗
+                    </button>
+                    <span v-else class="card-status-pill mp4-pill">MP4 声画同步</span>
+                  </div>
+
+                  <div class="audio-mixing-panel">
+                    <div class="audio-switch-row">
+                      <label class="audio-switch-label">
+                        <input type="checkbox" v-model="includeAudio" class="audio-switch-checkbox" />
+                        <span class="audio-switch-text">
+                          <span class="audio-switch-title">🔊 保留原视频声音</span>
+                        </span>
+                      </label>
+                      <span v-if="includeAudio" class="audio-vol-badge">{{ origAudioVolume }}%</span>
+                    </div>
+
+                    <div v-if="includeAudio" class="audio-slider-row">
+                      <span class="audio-slider-label">原声音量</span>
+                      <input
+                        type="range"
+                        v-model.number="origAudioVolume"
+                        min="0"
+                        max="200"
+                        step="5"
+                        class="audio-slider"
+                      />
+                    </div>
+
+                    <div class="bgm-control-section">
+                      <div class="bgm-header-row">
+                        <span class="bgm-section-title">叠加搞笑音效 / BGM</span>
+                        <div class="bgm-action-btns">
+                          <button type="button" class="bgm-lib-btn" @click="openSfxDrawer">🎵 音效库</button>
+                          <button type="button" class="bgm-pick-btn" @click="handlePickAudio">本地音频…</button>
+                        </div>
+                      </div>
+
+                      <div v-if="bgmPath" class="bgm-active-card">
+                        <div class="bgm-active-info">
+                          <button
+                            type="button"
+                            class="bgm-play-btn"
+                            :title="isPlayingActiveBgm ? '暂停试听' : '试听当前音效'"
+                            @click="togglePlayActiveBgm"
+                          >
+                            {{ isPlayingActiveBgm ? '⏸' : '▶' }}
+                          </button>
+                          <div class="bgm-active-meta">
+                            <span class="bgm-active-name" :title="bgmName">{{ bgmName }}</span>
+                            <span v-if="bgmDuration > 0" class="bgm-active-dur">{{ bgmDuration }}s</span>
+                          </div>
+                        </div>
+                        <button type="button" class="bgm-remove-btn" title="清除已选音效" @click="clearBgm">✕</button>
+                      </div>
+
+                      <div v-if="bgmPath" class="audio-slider-row">
+                        <span class="audio-slider-label">音效音量</span>
+                        <input
+                          type="range"
+                          v-model.number="bgmVolume"
+                          min="0"
+                          max="200"
+                          step="5"
+                          class="audio-slider"
+                        />
+                        <span class="audio-vol-badge">{{ bgmVolume }}%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ==================== Tab 4: 导出 (格式、预设、路径 & 硬件加速) ==================== -->
+              <div v-else-if="activeInspectorTab === 'export'" class="inspector-pane">
+                <!-- 输出格式 -->
+                <div class="inspector-card">
+                  <div class="inspector-card-header">
+                    <strong>导出格式</strong>
+                    <span class="format-hint">{{ exportFormat === 'mp4' ? '有声短视频' : exportFormat === 'avif' ? '超高压缩比' : exportFormat === 'webp' ? '高清小体积' : '全平台通用' }}</span>
+                  </div>
+                  <div class="format-pills">
+                    <button
+                      type="button"
+                      class="format-pill"
+                      :class="{ active: exportFormat === 'gif' }"
+                      @click="setExportFormat('gif')"
+                    >
+                      <span class="format-pill-name">GIF</span>
+                      <span class="format-pill-sub">经典通用</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="format-pill"
+                      :class="{ active: exportFormat === 'webp' }"
+                      @click="setExportFormat('webp')"
+                    >
+                      <span class="format-pill-name">WebP</span>
+                      <span class="format-pill-badge">小体积</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="format-pill pill-avif"
+                      :class="{ active: exportFormat === 'avif' }"
+                      @click="setExportFormat('avif')"
+                    >
+                      <span class="format-pill-name">AVIF</span>
+                      <span class="format-pill-badge badge-avif">超压缩</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="format-pill pill-mp4"
+                      :class="{ active: exportFormat === 'mp4' }"
+                      @click="setExportFormat('mp4')"
+                    >
+                      <span class="format-pill-name">MP4</span>
+                      <span class="format-pill-badge badge-mp4">带原声</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- 尺寸与帧率预设 -->
+                <div class="inspector-card">
+                  <div class="inspector-card-header">
+                    <strong>尺寸与帧率预设</strong>
+                    <span class="preset-tag-info">{{ currentPresetInfo.name }} · {{ currentPresetInfo.badge }}</span>
+                  </div>
+                  <div class="preset-pills">
+                    <button
+                      v-for="p in PRESETS"
+                      :key="p.id"
+                      type="button"
+                      class="preset-pill"
+                      :class="{ active: selectedPresetId === p.id }"
+                      :title="p.description"
+                      @click="applyPreset(p)"
+                    >
+                      <span class="preset-name">{{ p.name }}</span>
+                      <span class="preset-badge">{{ p.badge }}</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="preset-pill"
+                      :class="{ active: selectedPresetId === 'custom' }"
+                      title="手动调整输出参数"
+                      @click="selectedPresetId = 'custom'"
+                    >
+                      <span class="preset-name">自定义</span>
+                      <span class="preset-badge">自定</span>
+                    </button>
+                  </div>
+                  <div class="field-grid two-up">
+                    <label class="field">
+                      <span>输出宽度 · px</span>
+                      <input v-model.number="outputWidth" type="number" min="32" max="1920" step="1" @input="onManualParameterChange" />
+                    </label>
+                    <label class="field">
+                      <span>帧率 · FPS</span>
+                      <input v-model.number="fps" type="number" min="1" max="60" step="1" @input="onManualParameterChange" />
+                    </label>
+                  </div>
+                </div>
+
+                <!-- 保存位置与硬件加速 -->
+                <div class="inspector-card">
+                  <div class="inspector-card-header">
+                    <strong>保存路径与编码引擎</strong>
+                    <small class="inspector-sub-hint">同名自动顺延序号</small>
+                  </div>
+                  <div class="output-path-row">
+                    <input
+                      v-model="outputPath"
+                      type="text"
+                      :placeholder="`${exportFormat.toUpperCase()} 输出保存路径`"
+                    />
+                    <button type="button" aria-label="选择输出路径" title="浏览保存位置" @click="chooseOutput">…</button>
+                  </div>
+
+                  <div class="hw-accel-row" :class="{ 'is-disabled': hwAccelPolicy === 'disabled' }">
+                    <div class="hw-accel-info">
+                      <span class="hw-accel-icon" :class="{ 'is-active': hwAccelPolicy === 'auto' && hwAccelInfo?.supported }">
+                        {{ hwAccelPolicy === 'auto' && hwAccelInfo?.supported ? '⚡' : '⚙' }}
+                      </span>
+                      <div class="hw-accel-text">
+                        <span class="hw-accel-title">
+                          {{ hwAccelPolicy === 'auto' && hwAccelInfo?.supported ? `GPU 加速 · ${hwAccelInfo.engine}` : 'CPU 软件编码' }}
+                        </span>
+                        <small class="hw-accel-desc">
+                          {{ hwAccelPolicy === 'auto' && hwAccelInfo?.supported ? hwAccelInfo.description : '纯软件逐帧运算，兼容性高' }}
+                        </small>
                       </div>
                     </div>
                     <button
                       type="button"
-                      class="bgm-remove-btn"
-                      title="清除已选音效"
-                      @click="clearBgm"
+                      class="hw-toggle-btn"
+                      :class="{ 'is-on': hwAccelPolicy === 'auto' }"
+                      @click="hwAccelPolicy = hwAccelPolicy === 'auto' ? 'disabled' : 'auto'"
                     >
-                      ✕
+                      {{ hwAccelPolicy === 'auto' ? 'ON' : 'OFF' }}
                     </button>
                   </div>
-
-                  <div v-if="bgmPath" class="audio-slider-row">
-                    <span class="audio-slider-label">音效音量</span>
-                    <input
-                      type="range"
-                      v-model.number="bgmVolume"
-                      min="0"
-                      max="200"
-                      step="5"
-                      class="audio-slider"
-                    />
-                    <span class="audio-vol-badge">{{ bgmVolume }}%</span>
-                  </div>
                 </div>
-              </div>
-
-              <div class="output-path-row">
-                <input v-model="outputPath" type="text" :placeholder="exportFormat === 'mp4' ? 'MP4 输出路径' : exportFormat === 'avif' ? 'AVIF 输出路径' : exportFormat === 'webp' ? 'WebP 输出路径' : 'GIF 输出路径'" />
-                <button type="button" aria-label="选择输出路径" @click="chooseOutput">…</button>
-              </div>
-
-              <!-- 硬件加速模式指示与切换 -->
-              <div class="hw-accel-row" :class="{ 'is-disabled': hwAccelPolicy === 'disabled' }">
-                <div class="hw-accel-info">
-                  <span class="hw-accel-icon" :class="{ 'is-active': hwAccelPolicy === 'auto' && hwAccelInfo?.supported }">
-                    {{ hwAccelPolicy === 'auto' && hwAccelInfo?.supported ? '⚡' : '⚙' }}
-                  </span>
-                  <div class="hw-accel-text">
-                    <span class="hw-accel-title">
-                      {{ hwAccelPolicy === 'auto' && hwAccelInfo?.supported ? `硬件加速 · ${hwAccelInfo.engine}` : (hwAccelPolicy === 'disabled' ? 'CPU 软件压制 (已手动停用)' : 'CPU 软件压制') }}
-                    </span>
-                    <small class="hw-accel-desc">
-                      {{ hwAccelPolicy === 'auto' && hwAccelInfo?.supported ? hwAccelInfo.description : '使用 CPU 纯软件逐帧运算，兼容性高' }}
-                    </small>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  class="hw-toggle-btn"
-                  :class="{ 'is-on': hwAccelPolicy === 'auto' }"
-                  :title="hwAccelPolicy === 'auto' ? '点击切换为纯 CPU 软件编码' : '点击开启 GPU 硬件加速'"
-                  @click="hwAccelPolicy = hwAccelPolicy === 'auto' ? 'disabled' : 'auto'"
-                >
-                  {{ hwAccelPolicy === 'auto' ? 'GPU 加速 ON' : '纯软件 OFF' }}
-                </button>
               </div>
             </div>
           </aside>
         </section>
 
+        <!-- 3. 底部导出状态与主操作栏 -->
         <section class="export-bar panel-card">
           <div class="export-status">
-            <div class="status-icon" :class="`status-${status}`"><span>{{ status === "completed" ? "✓" : status === "failed" ? "!" : "✦" }}</span></div>
+            <div class="status-icon" :class="`status-${status}`">
+              <span>{{ status === "completed" ? "✓" : status === "failed" ? "!" : "✦" }}</span>
+            </div>
             <div>
               <strong>{{ statusLabel }}</strong>
               <span>{{ errorMessage || statusMessage }}</span>
             </div>
           </div>
+
           <div class="progress-wrap" :class="{ hidden: !isBusy && status !== 'completed' }">
             <div class="progress-track"><span :style="{ width: `${progress}%` }"></span></div>
             <small>{{ Math.round(progress) }}%</small>
           </div>
+
           <div class="export-actions">
+            <!-- 当前输出规格摘要标签（不论处于哪个 Tab 都一目了然） -->
             <span v-if="status === 'completed'" class="output-size">{{ formatBytes(outputBytes) }}</span>
-            <span v-else-if="media" class="preset-summary-badge">{{ currentPresetInfo.name }} · {{ currentPresetInfo.badge }}</span>
-            <span v-if="hwAccelPolicy === 'auto' && hwAccelInfo?.supported" class="hw-accel-badge" title="当前已激活 GPU 硬件编解码加速">
+            <button
+              v-if="media"
+              type="button"
+              class="preset-summary-badge clickable-spec-badge"
+              title="点击前往「导出」设置修改格式与分辨率"
+              @click="activeInspectorTab = 'export'"
+            >
+              {{ exportFormat.toUpperCase() }} · {{ outputWidth }}px · {{ fps }}FPS
+            </button>
+            <span v-if="hwAccelPolicy === 'auto' && hwAccelInfo?.supported" class="hw-accel-badge" title="已启用 GPU 硬件加速">
               ⚡ {{ hwAccelInfo.engine }}
             </span>
+
             <template v-if="status === 'completed' && outputPath">
               <button
                 class="secondary-action"
                 type="button"
-                title="在访达/资源管理器中显示此 GIF"
+                title="在访达/资源管理器中显示此文件"
                 @click="revealExportFile(outputPath)"
               >
                 访达定位 ↗
@@ -3568,42 +3660,22 @@ onBeforeUnmount(() => {
                 复制文件 📋
               </button>
             </template>
+
             <button
               class="secondary-action queue-add-btn"
               type="button"
               :disabled="!canRender || !isDesktop"
-              title="将当前片段与文字效果加入批量导出队列"
+              title="将当前片段与排版加入批量导出队列"
               @click="addToQueue"
             >
               ＋ 加入队列
             </button>
-            <button
-              v-if="queueItems.length > 0"
-              class="secondary-action queue-dock-btn"
-              :class="{ 'queue-active': isQueueRunning }"
-              type="button"
-              :title="isQueueRunning ? '批量队列正在运行中，点击查看' : '查看导出队列'"
-              @click="openQueueDrawer"
-            >
-              <span v-if="isQueueRunning" class="queue-pulse-dot"></span>
-              📋 队列 ({{ pendingQueueCount > 0 ? `${pendingQueueCount} 待处理` : queueItems.length }})
-            </button>
-            <button
-              v-if="historyList.length > 0"
-              class="secondary-action"
-              type="button"
-              title="查看全部导出历史"
-              @click="isDrawerOpen = !isDrawerOpen"
-            >
-              历史 ({{ historyList.length }})
-            </button>
             <button v-if="isBusy" class="secondary-action danger" type="button" @click="stopRender">取消</button>
             <button v-else class="primary-action" type="button" :disabled="!canRender || !isDesktop" @click="startRender">
-              {{ status === "completed" ? "再次导出" : (exportFormat === "mp4" ? "导出 MP4" : exportFormat === "avif" ? "导出 AVIF" : exportFormat === "webp" ? "导出 WebP" : "导出 GIF") }} <span>↗</span>
+              {{ status === "completed" ? "再次导出" : `导出 ${exportFormat.toUpperCase()}` }} <span>↗</span>
             </button>
           </div>
         </section>
-
       </div>
 
       <!-- 底部滑出式抽屉（导出历史与排版模板） -->
