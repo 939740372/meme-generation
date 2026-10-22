@@ -3,11 +3,13 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import {
   cancelRender,
   copyFileToClipboard,
+  getBuiltinSfx,
   getBuiltinStickers,
   getDesktopInfo,
   getHardwareAccelerationInfo,
   isDesktopRuntime,
   listenForRenderEvents,
+  pickAudioFile,
   pickMediaOutput,
   pickPng,
   pickVideo,
@@ -15,6 +17,8 @@ import {
   readFileAsDataUrl,
   renderGif,
   revealFileInDir,
+  type BgmOverlay,
+  type BuiltinSfx,
   type BuiltinSticker,
   type DesktopInfo,
   type ExportFormat,
@@ -70,11 +74,154 @@ const taskId = ref<string | null>(null);
 const outputBytes = ref(0);
 const stopListening = ref<(() => void) | null>(null);
 
-const drawerTab = ref<"history" | "templates" | "stickers" | "queue">("history");
+const drawerTab = ref<"history" | "templates" | "stickers" | "queue" | "sfx">("history");
 const customTemplates = ref<MemeTemplate[]>([]);
 const isSaveTemplateModalOpen = ref(false);
 const newTemplateName = ref("");
 const templateNameInputRef = ref<HTMLInputElement | null>(null);
+
+// 音频混流与音效状态
+const builtinSfxList = ref<BuiltinSfx[]>([]);
+const selectedSfxCategory = ref<"all" | "reaction" | "drama" | "funny">("all");
+const bgmPath = ref("");
+const bgmName = ref("");
+const bgmDuration = ref(0);
+const bgmVolume = ref(100);
+const origAudioVolume = ref(100);
+const playingSfxId = ref<string | null>(null);
+const isPlayingActiveBgm = ref(false);
+let sfxAudioPlayer: HTMLAudioElement | null = null;
+
+const filteredSfxList = computed(() => {
+  if (selectedSfxCategory.value === "all") {
+    return builtinSfxList.value;
+  }
+  return builtinSfxList.value.filter((s) => s.category === selectedSfxCategory.value);
+});
+
+const reactionSfxCount = computed(
+  () => builtinSfxList.value.filter((s) => s.category === "reaction").length
+);
+const dramaSfxCount = computed(
+  () => builtinSfxList.value.filter((s) => s.category === "drama").length
+);
+const funnySfxCount = computed(
+  () => builtinSfxList.value.filter((s) => s.category === "funny").length
+);
+
+const bgmOverlay = computed<BgmOverlay | null>(() => {
+  if (!bgmPath.value.trim()) {
+    return null;
+  }
+  return {
+    path: bgmPath.value,
+    volume: bgmVolume.value / 100,
+    origVolume: origAudioVolume.value / 100,
+  };
+});
+
+function getSfxCategoryLabel(cat: string): string {
+  switch (cat) {
+    case "reaction":
+      return "经典反响";
+    case "drama":
+      return "高能戏剧";
+    case "funny":
+      return "滑稽搞怪";
+    default:
+      return "音效素材";
+  }
+}
+
+function togglePlaySfx(sfx: BuiltinSfx): void {
+  if (playingSfxId.value === sfx.id) {
+    if (sfxAudioPlayer) {
+      sfxAudioPlayer.pause();
+      sfxAudioPlayer.currentTime = 0;
+    }
+    playingSfxId.value = null;
+    return;
+  }
+  if (sfxAudioPlayer) {
+    sfxAudioPlayer.pause();
+  }
+  isPlayingActiveBgm.value = false;
+  sfxAudioPlayer = new Audio(sfx.dataUrl);
+  sfxAudioPlayer.volume = Math.min(1.0, bgmVolume.value / 100);
+  playingSfxId.value = sfx.id;
+  sfxAudioPlayer.play().catch(() => {});
+  sfxAudioPlayer.onended = () => {
+    playingSfxId.value = null;
+  };
+}
+
+function togglePlayActiveBgm(): void {
+  if (isPlayingActiveBgm.value) {
+    if (sfxAudioPlayer) {
+      sfxAudioPlayer.pause();
+      sfxAudioPlayer.currentTime = 0;
+    }
+    isPlayingActiveBgm.value = false;
+    return;
+  }
+  if (!bgmPath.value) return;
+  if (sfxAudioPlayer) {
+    sfxAudioPlayer.pause();
+  }
+  playingSfxId.value = null;
+  const matched = builtinSfxList.value.find((s) => s.path === bgmPath.value);
+  const src = matched ? matched.dataUrl : bgmPath.value;
+  sfxAudioPlayer = new Audio(src);
+  sfxAudioPlayer.volume = Math.min(1.0, bgmVolume.value / 100);
+  isPlayingActiveBgm.value = true;
+  sfxAudioPlayer.play().catch(() => {});
+  sfxAudioPlayer.onended = () => {
+    isPlayingActiveBgm.value = false;
+  };
+}
+
+function applySfx(sfx: BuiltinSfx): void {
+  if (exportFormat.value !== "mp4") {
+    setExportFormat("mp4");
+    showToast("已自动切换为 MP4 短视频格式以承载音效");
+  }
+  bgmPath.value = sfx.path;
+  bgmName.value = sfx.name;
+  bgmDuration.value = sfx.duration;
+  showToast(`已选用音效：${sfx.name}`);
+}
+
+async function handlePickAudio(): Promise<void> {
+  const file = await pickAudioFile();
+  if (file) {
+    if (exportFormat.value !== "mp4") {
+      setExportFormat("mp4");
+      showToast("已自动切换为 MP4 短视频格式以承载音频");
+    }
+    bgmPath.value = file;
+    const slashIdx = Math.max(file.lastIndexOf("/"), file.lastIndexOf("\\"));
+    bgmName.value = slashIdx >= 0 ? file.slice(slashIdx + 1) : file;
+    bgmDuration.value = 0;
+    showToast(`已选用自定义音频：${bgmName.value}`);
+  }
+}
+
+function clearBgm(): void {
+  bgmPath.value = "";
+  bgmName.value = "";
+  bgmDuration.value = 0;
+  if (sfxAudioPlayer) {
+    sfxAudioPlayer.pause();
+  }
+  playingSfxId.value = null;
+  isPlayingActiveBgm.value = false;
+  showToast("已清除背景音乐 / 音效");
+}
+
+function openSfxDrawer(): void {
+  drawerTab.value = "sfx";
+  isDrawerOpen.value = true;
+}
 
 // 队列调度状态
 const queueItems = ref<QueueItem[]>([]);
@@ -1021,6 +1168,8 @@ function buildRenderPlan(): RenderPlan {
             width: Number(imageWidth.value),
           }
         : null,
+    hasAudio: media.value?.hasAudio ?? true,
+    bgmOverlay: bgmOverlay.value,
   };
 }
 
@@ -1243,6 +1392,24 @@ async function loadHistoryPlan(record: ExportRecord): Promise<void> {
     currentVideoFilter.value = p.videoFilter as VideoFilterKey;
   } else {
     currentVideoFilter.value = "none";
+  }
+
+  if (p.bgmOverlay) {
+    bgmPath.value = p.bgmOverlay.path;
+    const slashIdx = Math.max(p.bgmOverlay.path.lastIndexOf("/"), p.bgmOverlay.path.lastIndexOf("\\"));
+    bgmName.value = slashIdx >= 0 ? p.bgmOverlay.path.slice(slashIdx + 1) : p.bgmOverlay.path;
+    if (p.bgmOverlay.volume !== undefined) {
+      bgmVolume.value = Math.round(p.bgmOverlay.volume * 100);
+    }
+    if (p.bgmOverlay.origVolume !== undefined) {
+      origAudioVolume.value = Math.round(p.bgmOverlay.origVolume * 100);
+    }
+  } else {
+    bgmPath.value = "";
+    bgmName.value = "";
+    bgmDuration.value = 0;
+    bgmVolume.value = 100;
+    origAudioVolume.value = 100;
   }
 
   outputPath.value = p.outputPath;
@@ -1753,6 +1920,8 @@ function buildCurrentDraft(): StudioDraft {
     imageX: Number(imageX.value),
     imageY: Number(imageY.value),
     imageWidth: Number(imageWidth.value),
+    hasAudio: media.value?.hasAudio ?? true,
+    bgmOverlay: bgmOverlay.value,
   };
 }
 
@@ -1762,7 +1931,7 @@ function queueDraftSave(): void {
     clearTimeout(draftAutoSaveTimer);
   }
   draftAutoSaveTimer = setTimeout(() => {
-    if (!inputPath.value && !text.value && !useCrop.value) {
+    if (!inputPath.value && !text.value && !useCrop.value && !bgmPath.value) {
       return;
     }
     saveDraftToStorage(buildCurrentDraft());
@@ -1770,7 +1939,7 @@ function queueDraftSave(): void {
 }
 
 const hasActiveDraftOrMedia = computed(() => {
-  return Boolean(media.value || inputPath.value || text.value || useCrop.value || useImage.value);
+  return Boolean(media.value || inputPath.value || text.value || useCrop.value || useImage.value || bgmPath.value);
 });
 
 function resetWorkspace(): void {
@@ -1795,6 +1964,16 @@ function resetWorkspace(): void {
   exportFormat.value = "gif";
   includeAudio.value = true;
   hwAccelPolicy.value = "auto";
+  bgmPath.value = "";
+  bgmName.value = "";
+  bgmDuration.value = 0;
+  bgmVolume.value = 100;
+  origAudioVolume.value = 100;
+  if (sfxAudioPlayer) {
+    sfxAudioPlayer.pause();
+  }
+  playingSfxId.value = null;
+  isPlayingActiveBgm.value = false;
   useText.value = false;
   textLayers.value = [
     {
@@ -1850,6 +2029,17 @@ async function restoreDraftIfAvailable(): Promise<void> {
         }
         if (draft.hwAccel) {
           hwAccelPolicy.value = draft.hwAccel;
+        }
+        if (draft.bgmOverlay) {
+          bgmPath.value = draft.bgmOverlay.path;
+          const slashIdx = Math.max(draft.bgmOverlay.path.lastIndexOf("/"), draft.bgmOverlay.path.lastIndexOf("\\"));
+          bgmName.value = slashIdx >= 0 ? draft.bgmOverlay.path.slice(slashIdx + 1) : draft.bgmOverlay.path;
+          if (draft.bgmOverlay.volume !== undefined) {
+            bgmVolume.value = Math.round(draft.bgmOverlay.volume * 100);
+          }
+          if (draft.bgmOverlay.origVolume !== undefined) {
+            origAudioVolume.value = Math.round(draft.bgmOverlay.origVolume * 100);
+          }
         }
         currentVideoFilter.value = (draft.videoFilter as VideoFilterKey) || "none";
         selectedPresetId.value = draft.selectedPresetId;
@@ -1955,6 +2145,9 @@ watch(
     imageX,
     imageY,
     imageWidth,
+    bgmPath,
+    bgmVolume,
+    origAudioVolume,
   ],
   () => {
     queueDraftSave();
@@ -1978,6 +2171,7 @@ onMounted(async () => {
     loadHistoryFromStorage();
     loadQueueFromStorage();
     builtinStickers.value = await getBuiltinStickers();
+    builtinSfxList.value = await getBuiltinSfx();
     window.addEventListener("keydown", handleKeydown);
     desktopInfo.value = await getDesktopInfo();
     hwAccelInfo.value = await getHardwareAccelerationInfo();
@@ -1998,6 +2192,10 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   if (draftAutoSaveTimer) {
     clearTimeout(draftAutoSaveTimer);
+  }
+  if (sfxAudioPlayer) {
+    sfxAudioPlayer.pause();
+    sfxAudioPlayer = null;
   }
   stopListening.value?.();
   resizeObserver?.disconnect();
@@ -2605,15 +2803,93 @@ onBeforeUnmount(() => {
                 </button>
               </div>
 
-              <!-- 当格式为 MP4 时呈现音频原声保留开关 -->
-              <div v-if="exportFormat === 'mp4'" class="audio-switch-row">
-                <label class="audio-switch-label" title="开启后导出的 MP4 将包含源片声音与变速同步音效">
-                  <input type="checkbox" v-model="includeAudio" class="audio-switch-checkbox" />
-                  <span class="audio-switch-text">
-                    <span class="audio-switch-title">🔊 保留原声音频</span>
-                    <span class="audio-switch-sub">混流 AAC 音轨，且声画同步变速</span>
-                  </span>
-                </label>
+              <!-- 当格式为 MP4 时呈现背景音乐与音效混流控制区 -->
+              <div v-if="exportFormat === 'mp4'" class="audio-mixing-panel">
+                <div class="audio-switch-row">
+                  <label class="audio-switch-label" title="开启后导出的 MP4 将包含源片声音与变速同步音效">
+                    <input type="checkbox" v-model="includeAudio" class="audio-switch-checkbox" />
+                    <span class="audio-switch-text">
+                      <span class="audio-switch-title">🔊 保留原声音频</span>
+                      <span class="audio-switch-sub">混流 AAC 音轨，且声画同步变速</span>
+                    </span>
+                  </label>
+                  <span v-if="includeAudio" class="audio-vol-badge">{{ origAudioVolume }}%</span>
+                </div>
+
+                <div v-if="includeAudio" class="audio-slider-row">
+                  <span class="audio-slider-label">原声音量</span>
+                  <input
+                    type="range"
+                    v-model.number="origAudioVolume"
+                    min="0"
+                    max="200"
+                    step="5"
+                    class="audio-slider"
+                  />
+                </div>
+
+                <!-- BGM / 音效叠加状态 -->
+                <div class="bgm-control-section">
+                  <div class="bgm-header-row">
+                    <span class="bgm-section-title">🎵 音效 / 背景音乐</span>
+                    <div class="bgm-action-btns">
+                      <button
+                        type="button"
+                        class="bgm-lib-btn"
+                        title="打开音效素材库选用经典二创音效"
+                        @click="openSfxDrawer"
+                      >
+                        音效库
+                      </button>
+                      <button
+                        type="button"
+                        class="bgm-pick-btn"
+                        title="选择本地 MP3 / WAV / M4A / AAC / OGG 文件"
+                        @click="handlePickAudio"
+                      >
+                        本地音频…
+                      </button>
+                    </div>
+                  </div>
+
+                  <div v-if="bgmPath" class="bgm-active-card">
+                    <div class="bgm-active-info">
+                      <button
+                        type="button"
+                        class="bgm-play-btn"
+                        :title="isPlayingActiveBgm ? '暂停试听' : '试听当前音效'"
+                        @click="togglePlayActiveBgm"
+                      >
+                        {{ isPlayingActiveBgm ? '⏸' : '▶' }}
+                      </button>
+                      <div class="bgm-active-meta">
+                        <span class="bgm-active-name" :title="bgmName">{{ bgmName }}</span>
+                        <span v-if="bgmDuration > 0" class="bgm-active-dur">{{ bgmDuration }}s</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      class="bgm-remove-btn"
+                      title="清除已选音效"
+                      @click="clearBgm"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <div v-if="bgmPath" class="audio-slider-row">
+                    <span class="audio-slider-label">音效音量</span>
+                    <input
+                      type="range"
+                      v-model.number="bgmVolume"
+                      min="0"
+                      max="200"
+                      step="5"
+                      class="audio-slider"
+                    />
+                    <span class="audio-vol-badge">{{ bgmVolume }}%</span>
+                  </div>
+                </div>
               </div>
 
               <div class="output-path-row">
@@ -2761,6 +3037,15 @@ onBeforeUnmount(() => {
                   <button
                     type="button"
                     class="drawer-tab"
+                    :class="{ active: drawerTab === 'sfx' }"
+                    @click="drawerTab = 'sfx'"
+                  >
+                    <span>🎵 音效库</span>
+                    <span class="drawer-count-chip">{{ builtinSfxList.length }}</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="drawer-tab"
                     :class="{ active: drawerTab === 'queue' }"
                     @click="drawerTab = 'queue'"
                   >
@@ -2793,6 +3078,9 @@ onBeforeUnmount(() => {
                 </template>
                 <template v-else-if="drawerTab === 'stickers'">
                   <span class="drawer-stickers-tip">透明免抠图 · 点击一键置入画布</span>
+                </template>
+                <template v-else-if="drawerTab === 'sfx'">
+                  <span class="drawer-stickers-tip">免版权搞笑二创音效 · 即选即用</span>
                 </template>
                 <template v-else-if="drawerTab === 'queue'">
                   <button
@@ -3152,6 +3440,81 @@ onBeforeUnmount(() => {
                 <div class="drawer-empty-title">导出队列为空</div>
                 <div class="drawer-empty-desc">
                   调整好视频片段截取时间、字幕、贴纸后，点击底部「＋ 加入队列」即可将任务添加至此处，稍后一键串行批量导出！
+                </div>
+              </div>
+            </div>
+
+            <!-- Tab 5: 内置二创音效素材库 -->
+            <div v-else-if="drawerTab === 'sfx'" class="drawer-tab-content sfx-tab-content">
+              <div class="sfx-filter-bar">
+                <div class="sfx-category-pills">
+                  <button
+                    type="button"
+                    class="category-pill-btn"
+                    :class="{ active: selectedSfxCategory === 'all' }"
+                    @click="selectedSfxCategory = 'all'"
+                  >
+                    全部 ({{ builtinSfxList.length }})
+                  </button>
+                  <button
+                    type="button"
+                    class="category-pill-btn"
+                    :class="{ active: selectedSfxCategory === 'reaction' }"
+                    @click="selectedSfxCategory = 'reaction'"
+                  >
+                    经典反响 ({{ reactionSfxCount }})
+                  </button>
+                  <button
+                    type="button"
+                    class="category-pill-btn"
+                    :class="{ active: selectedSfxCategory === 'drama' }"
+                    @click="selectedSfxCategory = 'drama'"
+                  >
+                    高能戏剧 ({{ dramaSfxCount }})
+                  </button>
+                  <button
+                    type="button"
+                    class="category-pill-btn"
+                    :class="{ active: selectedSfxCategory === 'funny' }"
+                    @click="selectedSfxCategory = 'funny'"
+                  >
+                    滑稽搞怪 ({{ funnySfxCount }})
+                  </button>
+                </div>
+              </div>
+
+              <div class="sfx-cards-grid">
+                <div
+                  v-for="sfx in filteredSfxList"
+                  :key="sfx.id"
+                  class="sfx-card"
+                  :class="{ 'is-selected': bgmPath === sfx.path }"
+                >
+                  <div class="sfx-card-top">
+                    <span class="sfx-badge">{{ getSfxCategoryLabel(sfx.category) }}</span>
+                    <span class="sfx-duration">{{ sfx.duration }}s</span>
+                  </div>
+                  <div class="sfx-card-body">
+                    <button
+                      type="button"
+                      class="sfx-play-btn"
+                      :title="playingSfxId === sfx.id ? '停止试听' : '试听音效'"
+                      @click="togglePlaySfx(sfx)"
+                    >
+                      <span class="sfx-play-icon">{{ playingSfxId === sfx.id ? '⏸' : '▶' }}</span>
+                    </button>
+                    <span class="sfx-name">{{ sfx.name }}</span>
+                  </div>
+                  <div class="sfx-card-footer">
+                    <button
+                      type="button"
+                      class="sfx-apply-btn"
+                      :class="{ 'is-applied': bgmPath === sfx.path }"
+                      @click="applySfx(sfx)"
+                    >
+                      {{ bgmPath === sfx.path ? '✓ 已选用' : '选用此音效' }}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

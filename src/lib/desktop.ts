@@ -16,6 +16,7 @@ export interface MediaInfo {
   width: number;
   height: number;
   fps: number;
+  hasAudio?: boolean;
 }
 
 export interface CropArea {
@@ -56,6 +57,21 @@ export interface BuiltinSticker {
   defaultWidth: number;
 }
 
+export interface BgmOverlay {
+  path: string;
+  volume?: number;
+  origVolume?: number;
+}
+
+export interface BuiltinSfx {
+  id: string;
+  name: string;
+  category: "reaction" | "drama" | "funny" | string;
+  path: string;
+  dataUrl: string;
+  duration: number;
+}
+
 export type ExportFormat = "gif" | "webp" | "avif" | "mp4";
 
 export type HwAccelPolicy = "auto" | "disabled";
@@ -83,6 +99,8 @@ export interface RenderPlan {
   videoFilter?: string;
   includeAudio?: boolean;
   hwAccel?: HwAccelPolicy;
+  hasAudio?: boolean;
+  bgmOverlay?: BgmOverlay | null;
 }
 
 export interface ExportRecord {
@@ -302,6 +320,36 @@ export async function getBuiltinStickers(): Promise<BuiltinSticker[]> {
   } catch {
     return [];
   }
+}
+
+export async function getBuiltinSfx(): Promise<BuiltinSfx[]> {
+  if (!isDesktopRuntime()) {
+    return [];
+  }
+  try {
+    return await invoke<BuiltinSfx[]>("get_builtin_sfx");
+  } catch {
+    return [];
+  }
+}
+
+export async function pickAudioFile(): Promise<string | null> {
+  if (!isDesktopRuntime()) {
+    return null;
+  }
+  const selected = await open({
+    multiple: false,
+    filters: [
+      {
+        name: "Audio Files",
+        extensions: ["mp3", "wav", "m4a", "aac", "ogg"],
+      },
+    ],
+  });
+  if (!selected || Array.isArray(selected)) {
+    return null;
+  }
+  return selected;
 }
 
 export async function getHardwareAccelerationInfo(): Promise<HardwareAccelerationInfo> {

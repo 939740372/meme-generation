@@ -1,6 +1,6 @@
 # 实现方案：自定义背景音乐与音效混流 (bgm-audio-mixing)
 
-- 状态：implementing
+- 状态：ready-to-merge
 - Feature slug: bgm-audio-mixing
 - 分支：feature/bgm-audio-mixing
 - 负责人：Antigravity
@@ -48,6 +48,29 @@
 
 ## 4. 自测记录
 
-- 状态：待执行
+- 状态：全部通过 (PASS)
 - 测试平台：macOS 15.3 (Apple Silicon aarch64)
-- 执行结果将同步记录在此。
+- 执行记录：
+  1. **内置音效生成与资源完备性**：
+     - 执行：`node scripts/generate-sfx.mjs`
+     - 结果：生成 8 款高品质免版权音效（消音哔哔、绝了清脆叮、震撼低音808、高能警报、弹簧搞笑、欢呼和弦、打脸啪啪、滑稽笑声），总大小仅约 160KB，通过 `src-tauri/tauri.conf.json` 配置打包入 `resources`。
+  2. **Rust 单元测试**：
+     - 命令：`PATH=/Users/ryantorres/.cargo/bin:$PATH cargo test --manifest-path src-tauri/Cargo.toml`
+     - 结果：27 项测试全部通过（含 BGM 双路混音、无声视频单轨 BGM 注入、贴纸与 BGM 复合三路输入索引管理、8 款内置音效读取与 base64 验证、音频 MIME 识别等）。
+  3. **Cargo locked 严格检查**：
+     - 命令：`PATH=/Users/ryantorres/.cargo/bin:$PATH cargo check --manifest-path src-tauri/Cargo.toml --locked`
+     - 结果：0 errors, 0 warnings 通过。
+  4. **端到端冒烟测试**：
+     - 命令：`node scripts/smoke-test-bgm-mixing.mjs`
+     - 结果：全部 6 项测试场景均绿灯通过：
+       - 内置音效时长与格式探测通过；
+       - 双路混流（原声 + 消音哔哔）导出 MP4，验证 1 视频流 + 1 AAC 音频流，时长严格 2.000s 对齐；
+       - 无原声音频的纯静音视频 + 震撼低音，成功合成出包含 AAC 音轨的 MP4，零报错；
+       - 2x 鬼畜变速视频 + 清脆叮，原声 2x atempo 变速，时长对齐 1.05s；
+       - GIF 动图模式自动 `-an` 隔离验证通过。
+  5. **前端 TypeScript 与构建检查**：
+     - 命令：`pnpm build` (`vue-tsc --noEmit && vite build`)
+     - 结果：通过，产物正常构建无警告。
+  6. **Git 代码差异格式检查**：
+     - 命令：`git diff --check`
+     - 结果：无空白或格式异常。
