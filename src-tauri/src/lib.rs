@@ -132,6 +132,15 @@ impl RenderPlan {
         self.output_path.to_ascii_lowercase().ends_with(".webp")
     }
 
+    fn is_avif(&self) -> bool {
+        if let Some(fmt) = &self.format {
+            if fmt.eq_ignore_ascii_case("avif") {
+                return true;
+            }
+        }
+        self.output_path.to_ascii_lowercase().ends_with(".avif")
+    }
+
     fn active_text_layers(&self) -> Vec<&TextOverlay> {
         if let Some(layers) = &self.text_layers {
             if !layers.is_empty() {
@@ -511,11 +520,11 @@ fn validate_render_plan(plan: &RenderPlan, media: &MediaInfo) -> CommandResult<(
         .and_then(|extension| extension.to_str())
         .map(|extension| extension.to_ascii_lowercase());
     match ext.as_deref() {
-        Some("gif") | Some("webp") => {}
+        Some("gif") | Some("webp") | Some("avif") => {}
         _ => {
             return Err(app_error(
                 "INVALID_OUTPUT",
-                "输出文件必须使用 .gif 或 .webp 扩展名。",
+                "输出文件必须使用 .gif、.webp 或 .avif 扩展名。",
             ));
         }
     }
@@ -523,6 +532,7 @@ fn validate_render_plan(plan: &RenderPlan, media: &MediaInfo) -> CommandResult<(
         let fmt_lower = fmt.to_ascii_lowercase();
         if (fmt_lower == "webp" && ext.as_deref() != Some("webp"))
             || (fmt_lower == "gif" && ext.as_deref() != Some("gif"))
+            || (fmt_lower == "avif" && ext.as_deref() != Some("avif"))
         {
             return Err(app_error(
                 "INVALID_OUTPUT_FORMAT",
@@ -624,6 +634,15 @@ fn build_filter_graph(plan: &RenderPlan) -> String {
         } else {
             format!("[0:v]{}[vout]", source)
         }
+    } else if plan.is_avif() {
+        if let Some(image) = &plan.image_overlay {
+            format!(
+                "[0:v]{}[base];[1:v]scale={}:{}:flags=lanczos[sticker];[base][sticker]overlay={}:{}:eof_action=pass,format=yuv420p[vout]",
+                source, image.width, -1, image.x, image.y
+            )
+        } else {
+            format!("[0:v]{},format=yuv420p[vout]", source)
+        }
     } else {
         let mut graph = format!("[0:v]{}[base]", source);
         let final_label = if let Some(image) = &plan.image_overlay {
@@ -694,6 +713,28 @@ fn build_ffmpeg_args(plan: &RenderPlan) -> Vec<String> {
             q_val.to_string(),
             "-loop".to_string(),
             "0".to_string(),
+            "-an".to_string(),
+            plan.output_path.clone(),
+        ]);
+    } else if plan.is_avif() {
+        let crf_val = match plan.quality.as_deref() {
+            Some("low") => "38",
+            Some("high") => "26",
+            _ => "32",
+        };
+        args.extend([
+            "-filter_complex".to_string(),
+            filter_graph,
+            "-map".to_string(),
+            "[vout]".to_string(),
+            "-c:v".to_string(),
+            "libsvtav1".to_string(),
+            "-preset".to_string(),
+            "8".to_string(),
+            "-crf".to_string(),
+            crf_val.to_string(),
+            "-pix_fmt".to_string(),
+            "yuv420p".to_string(),
             "-an".to_string(),
             plan.output_path.clone(),
         ]);
@@ -1053,6 +1094,8 @@ fn read_file_as_data_url(path: String) -> CommandResult<String> {
         "image/jpeg"
     } else if lower.ends_with(".webp") {
         "image/webp"
+    } else if lower.ends_with(".avif") {
+        "image/avif"
     } else {
         "image/gif"
     };
@@ -1382,7 +1425,38 @@ mod tests {
     }
 
     #[test]
-    fn validates_render_plan_supports_gif_and_webp() {
+    fn builds_avif_filter_graph_and_args() {
+        let plan = RenderPlan {
+            input_path: "input.mp4".to_string(),
+            output_path: "output.avif".to_string(),
+            start_secs: 1.0,
+            end_secs: 3.5,
+            crop: None,
+            output_width: 320,
+            fps: 12,
+            quality: Some("low".to_string()),
+            text_overlay: None,
+            text_layers: None,
+            image_overlay: None,
+            format: Some("avif".to_string()),
+        };
+        let graph = build_filter_graph(&plan);
+        assert!(!graph.contains("palettegen"));
+        assert!(!graph.contains("paletteuse"));
+        assert!(graph.contains("format=yuv420p[vout]"));
+
+        let args = build_ffmpeg_args(&plan);
+        assert!(args.iter().any(|arg| arg == "libsvtav1"));
+        assert!(args.iter().any(|arg| arg == "-crf"));
+        assert!(args.iter().any(|arg| arg == "38"));
+        assert!(args.iter().any(|arg| arg == "-preset"));
+        assert!(args.iter().any(|arg| arg == "8"));
+        assert!(args.iter().any(|arg| arg == "-pix_fmt"));
+        assert!(args.iter().any(|arg| arg == "yuv420p"));
+    }
+
+    #[test]
+    fn validates_render_plan_supports_gif_webp_and_avif() {
         let media = MediaInfo {
             path: "in.mp4".to_string(),
             file_name: "in.mp4".to_string(),
@@ -1395,7 +1469,7 @@ mod tests {
 
         let temp_dir = env::temp_dir();
         let webp_out = temp_dir.join("test_valid.webp");
-        let plan = RenderPlan {
+        let plan_webp = RenderPlan {
             input_path: "in.mp4".to_string(),
             output_path: webp_out.to_string_lossy().to_string(),
             start_secs: 0.0,
@@ -1409,13 +1483,21 @@ mod tests {
             image_overlay: None,
             format: Some("webp".to_string()),
         };
-        assert!(validate_render_plan(&plan, &media).is_ok());
+        assert!(validate_render_plan(&plan_webp, &media).is_ok());
+
+        let avif_out = temp_dir.join("test_valid.avif");
+        let plan_avif = RenderPlan {
+            output_path: avif_out.to_string_lossy().to_string(),
+            format: Some("avif".to_string()),
+            ..plan_webp.clone()
+        };
+        assert!(validate_render_plan(&plan_avif, &media).is_ok());
 
         // 测试格式不匹配
         let mismatch_plan = RenderPlan {
-            output_path: webp_out.to_string_lossy().to_string(),
+            output_path: avif_out.to_string_lossy().to_string(),
             format: Some("gif".to_string()),
-            ..plan.clone()
+            ..plan_webp.clone()
         };
         assert!(validate_render_plan(&mismatch_plan, &media).is_err());
     }

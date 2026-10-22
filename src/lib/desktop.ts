@@ -68,7 +68,7 @@ export interface RenderPlan {
   textOverlay: TextOverlay | null;
   textLayers?: TextOverlay[] | null;
   imageOverlay: ImageOverlay | null;
-  format?: "gif" | "webp";
+  format?: "gif" | "webp" | "avif";
 }
 
 export interface ExportRecord {
@@ -174,24 +174,26 @@ export async function pickGifOutput(defaultPath?: string): Promise<string | null
 
 export async function pickMediaOutput(
   defaultPath?: string,
-  format: "gif" | "webp" = "gif",
+  format: "gif" | "webp" | "avif" = "gif",
 ): Promise<string | null> {
   requireDesktopRuntime();
 
-  const filters =
-    format === "webp"
-      ? [
-          { name: "WebP 动图", extensions: ["webp"] },
-          { name: "GIF 动图", extensions: ["gif"] },
-        ]
-      : [
-          { name: "GIF 动图", extensions: ["gif"] },
-          { name: "WebP 动图", extensions: ["webp"] },
-        ];
+  const filterMap = {
+    gif: { name: "GIF 经典动图", extensions: ["gif"] },
+    webp: { name: "WebP 动图", extensions: ["webp"] },
+    avif: { name: "AVIF 新一代动图", extensions: ["avif"] },
+  };
+
+  const prioritized = [
+    filterMap[format],
+    ...Object.entries(filterMap)
+      .filter(([k]) => k !== format)
+      .map(([, v]) => v),
+  ];
 
   return save({
     defaultPath,
-    filters,
+    filters: prioritized,
   });
 }
 

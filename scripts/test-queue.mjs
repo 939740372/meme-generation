@@ -25,7 +25,10 @@ assert.equal(p3, "/tmp/output/sample_video_1.2s-3.5s_(2).gif");
 const pWebp = generateQueueOutputPath("/tmp/output", "funny cat.mp4", 0.0, 2.0, "webp", existing);
 assert.equal(pWebp, "/tmp/output/funny_cat_0.0s-2.0s.webp");
 
-console.log("✓ Path generation & deduplication verified.");
+const pAvif = generateQueueOutputPath("/tmp/output", "funny cat.mp4", 0.0, 2.0, "avif", existing);
+assert.equal(pAvif, "/tmp/output/funny_cat_0.0s-2.0s.avif");
+
+console.log("✓ Path generation & deduplication verified (GIF, WebP, AVIF).");
 
 console.log("--- Testing createQueueItem ---");
 const mockPlan = {

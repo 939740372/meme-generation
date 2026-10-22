@@ -54,7 +54,7 @@ const desktopInfo = ref<DesktopInfo | null>(null);
 const media = ref<MediaInfo | null>(null);
 const inputPath = ref("");
 const outputPath = ref("");
-const exportFormat = ref<"gif" | "webp">("gif");
+const exportFormat = ref<"gif" | "webp" | "avif">("gif");
 const status = ref<TaskStatus>("idle");
 const progress = ref(0);
 const statusMessage = ref("选择一个视频开始制作。");
@@ -805,7 +805,7 @@ function basenameWithoutExtension(path: string): string {
   return fileName.replace(/\.[^.]+$/, "") || "meme";
 }
 
-function defaultOutputPath(path: string, format: "gif" | "webp" = exportFormat.value): string {
+function defaultOutputPath(path: string, format: "gif" | "webp" | "avif" = exportFormat.value): string {
   const separator = path.includes("\\") ? "\\" : "/";
   const parts = path.split(/[\\/]/);
   parts.pop();
@@ -814,21 +814,21 @@ function defaultOutputPath(path: string, format: "gif" | "webp" = exportFormat.v
   return parent ? `${parent}${separator}${fileName}` : fileName;
 }
 
-function ensureFormatExtension(path: string, format: "gif" | "webp" = exportFormat.value): string {
+function ensureFormatExtension(path: string, format: "gif" | "webp" | "avif" = exportFormat.value): string {
   const clean = path.trim();
   if (!clean) return "";
   const lower = clean.toLowerCase();
   if (lower.endsWith(`.${format}`)) {
     return clean;
   }
-  if (lower.endsWith(".gif") || lower.endsWith(".webp")) {
+  if (lower.endsWith(".gif") || lower.endsWith(".webp") || lower.endsWith(".avif")) {
     const idx = clean.lastIndexOf(".");
     return `${clean.substring(0, idx)}.${format}`;
   }
   return `${clean}.${format}`;
 }
 
-function setExportFormat(fmt: "gif" | "webp"): void {
+function setExportFormat(fmt: "gif" | "webp" | "avif"): void {
   exportFormat.value = fmt;
   if (outputPath.value.trim()) {
     outputPath.value = ensureFormatExtension(outputPath.value.trim(), fmt);
@@ -1167,7 +1167,9 @@ async function loadHistoryPlan(record: ExportRecord): Promise<void> {
     imagePreviewUrl.value = "";
   }
 
-  if (p.format === "webp" || record.filePath.toLowerCase().endsWith(".webp")) {
+  if (p.format === "avif" || record.filePath.toLowerCase().endsWith(".avif")) {
+    exportFormat.value = "avif";
+  } else if (p.format === "webp" || record.filePath.toLowerCase().endsWith(".webp")) {
     exportFormat.value = "webp";
   } else {
     exportFormat.value = "gif";
@@ -1318,7 +1320,8 @@ async function connectDesktopEvents(): Promise<void> {
         progress.value = 100;
         outputBytes.value = event.outputBytes;
         outputPath.value = event.outputPath;
-        statusMessage.value = `${exportFormat.value === "webp" ? "WebP" : "GIF"} 已导出，可以打开文件查看。`;
+        const fmtLabel = exportFormat.value === "avif" ? "AVIF" : exportFormat.value === "webp" ? "WebP" : "GIF";
+        statusMessage.value = `${fmtLabel} 已导出，可以打开文件查看。`;
         await addHistoryRecord(event.outputPath, event.outputBytes);
       },
       onFailed: (event) => {
@@ -2446,7 +2449,7 @@ onBeforeUnmount(() => {
             <div class="control-section output-section">
               <div class="section-label-row">
                 <div class="section-label"><span>04</span> 格式与保存</div>
-                <span class="format-hint">{{ exportFormat === 'webp' ? '小体积·真彩色' : '通用兼容' }}</span>
+                <span class="format-hint">{{ exportFormat === 'avif' ? '超高压缩比·新一代' : exportFormat === 'webp' ? '小体积·真彩色' : '通用兼容' }}</span>
               </div>
               <div class="format-pills">
                 <button
@@ -2463,15 +2466,25 @@ onBeforeUnmount(() => {
                   type="button"
                   class="format-pill"
                   :class="{ active: exportFormat === 'webp' }"
-                  title="现代 WebP 动图格式，体积缩小 40%~60%，极速导出"
+                  title="现代 WebP 动图格式，体积缩小 50% 以上，极速导出"
                   @click="setExportFormat('webp')"
                 >
                   <span class="format-pill-name">WebP</span>
-                  <span class="format-pill-badge">推荐·小体积</span>
+                  <span class="format-pill-badge">小体积</span>
+                </button>
+                <button
+                  type="button"
+                  class="format-pill pill-avif"
+                  :class="{ active: exportFormat === 'avif' }"
+                  title="新一代 AVIF 动图格式，体积比 WebP 更小 20%~30%，色彩细节极佳"
+                  @click="setExportFormat('avif')"
+                >
+                  <span class="format-pill-name">AVIF</span>
+                  <span class="format-pill-badge badge-avif">新一代·超压缩</span>
                 </button>
               </div>
               <div class="output-path-row">
-                <input v-model="outputPath" type="text" :placeholder="exportFormat === 'webp' ? 'WebP 输出路径' : 'GIF 输出路径'" />
+                <input v-model="outputPath" type="text" :placeholder="exportFormat === 'avif' ? 'AVIF 输出路径' : exportFormat === 'webp' ? 'WebP 输出路径' : 'GIF 输出路径'" />
                 <button type="button" aria-label="选择输出路径" @click="chooseOutput">…</button>
               </div>
             </div>
@@ -2542,7 +2555,7 @@ onBeforeUnmount(() => {
             </button>
             <button v-if="isBusy" class="secondary-action danger" type="button" @click="stopRender">取消</button>
             <button v-else class="primary-action" type="button" :disabled="!canRender || !isDesktop" @click="startRender">
-              {{ status === "completed" ? "再次导出" : (exportFormat === "webp" ? "导出 WebP" : "导出 GIF") }} <span>↗</span>
+              {{ status === "completed" ? "再次导出" : (exportFormat === "avif" ? "导出 AVIF" : exportFormat === "webp" ? "导出 WebP" : "导出 GIF") }} <span>↗</span>
             </button>
           </div>
         </section>
@@ -2677,7 +2690,7 @@ onBeforeUnmount(() => {
                   <div class="history-card-thumb">
                     <img v-if="item.previewUrl" :src="item.previewUrl" :alt="item.fileName" />
                     <div v-else class="card-thumb-fallback">
-                      <span>{{ item.fileName.toLowerCase().endsWith('.webp') ? 'WEBP' : 'GIF' }}</span>
+                      <span>{{ item.fileName.toLowerCase().endsWith('.avif') ? 'AVIF' : item.fileName.toLowerCase().endsWith('.webp') ? 'WEBP' : 'GIF' }}</span>
                     </div>
                     <span class="history-card-size-pill">{{ formatBytes(item.outputBytes) }}</span>
                   </div>
@@ -2685,8 +2698,11 @@ onBeforeUnmount(() => {
                   <div class="history-card-body">
                     <div class="history-card-title-row">
                       <strong class="history-card-filename" :title="item.fileName">{{ item.fileName }}</strong>
-                      <span class="history-format-badge" :class="item.fileName.toLowerCase().endsWith('.webp') ? 'badge-webp' : 'badge-gif'">
-                        {{ item.fileName.toLowerCase().endsWith('.webp') ? 'WEBP' : 'GIF' }}
+                      <span
+                        class="history-format-badge"
+                        :class="item.fileName.toLowerCase().endsWith('.avif') ? 'badge-avif' : item.fileName.toLowerCase().endsWith('.webp') ? 'badge-webp' : 'badge-gif'"
+                      >
+                        {{ item.fileName.toLowerCase().endsWith('.avif') ? 'AVIF' : item.fileName.toLowerCase().endsWith('.webp') ? 'WEBP' : 'GIF' }}
                       </span>
                       <small class="history-card-time">{{ formatRelativeTime(item.timestamp) }}</small>
                     </div>
