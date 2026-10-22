@@ -1,6 +1,6 @@
 # 任务拆解：现代小体积动图 WebP 格式支持
 
-- 状态：ready-to-merge
+- 状态：merged
 - Feature slug: modern-formats
 - 分支：feature/modern-formats
 - 负责人：Antigravity
@@ -31,5 +31,5 @@
   - [x] 3.4 检查 `git diff --check`
 - [x] 4. 收尾与主分支合入
   - [x] 4.1 更新五件套文档状态为 `ready-to-merge` 并记录自测结果
-  - [ ] 4.2 非快进合并至 `main`
-  - [ ] 4.3 文档状态变更为 `merged`，同步根目录 `TODO.md`，推送到远程仓库
+  - [x] 4.2 非快进合并至 `main`
+  - [x] 4.3 文档状态变更为 `merged`，同步根目录 `TODO.md`，推送到远程仓库
