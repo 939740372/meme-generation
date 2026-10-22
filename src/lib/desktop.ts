@@ -56,6 +56,7 @@ export interface RenderPlan {
   quality?: "low" | "medium" | "high";
   textOverlay: TextOverlay | null;
   imageOverlay: ImageOverlay | null;
+  format?: "gif" | "webp";
 }
 
 export interface ExportRecord {
@@ -156,11 +157,29 @@ export async function pickPng(): Promise<string | null> {
 }
 
 export async function pickGifOutput(defaultPath?: string): Promise<string | null> {
+  return pickMediaOutput(defaultPath, "gif");
+}
+
+export async function pickMediaOutput(
+  defaultPath?: string,
+  format: "gif" | "webp" = "gif",
+): Promise<string | null> {
   requireDesktopRuntime();
+
+  const filters =
+    format === "webp"
+      ? [
+          { name: "WebP 动图", extensions: ["webp"] },
+          { name: "GIF 动图", extensions: ["gif"] },
+        ]
+      : [
+          { name: "GIF 动图", extensions: ["gif"] },
+          { name: "WebP 动图", extensions: ["webp"] },
+        ];
 
   return save({
     defaultPath,
-    filters: [{ name: "GIF 动图", extensions: ["gif"] }],
+    filters,
   });
 }
 

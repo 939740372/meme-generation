@@ -6,7 +6,7 @@ import {
   getDesktopInfo,
   isDesktopRuntime,
   listenForRenderEvents,
-  pickGifOutput,
+  pickMediaOutput,
   pickPng,
   pickVideo,
   probeMedia,
@@ -32,6 +32,7 @@ const desktopInfo = ref<DesktopInfo | null>(null);
 const media = ref<MediaInfo | null>(null);
 const inputPath = ref("");
 const outputPath = ref("");
+const exportFormat = ref<"gif" | "webp">("gif");
 const status = ref<TaskStatus>("idle");
 const progress = ref(0);
 const statusMessage = ref("选择一个视频开始制作。");
@@ -575,17 +576,34 @@ function basenameWithoutExtension(path: string): string {
   return fileName.replace(/\.[^.]+$/, "") || "meme";
 }
 
-function defaultGifPath(path: string): string {
+function defaultOutputPath(path: string, format: "gif" | "webp" = exportFormat.value): string {
   const separator = path.includes("\\") ? "\\" : "/";
   const parts = path.split(/[\\/]/);
   parts.pop();
   const parent = parts.join(separator);
-  const fileName = `${basenameWithoutExtension(path)}-meme.gif`;
+  const fileName = `${basenameWithoutExtension(path)}-meme.${format}`;
   return parent ? `${parent}${separator}${fileName}` : fileName;
 }
 
-function ensureGifExtension(path: string): string {
-  return path.toLowerCase().endsWith(".gif") ? path : `${path}.gif`;
+function ensureFormatExtension(path: string, format: "gif" | "webp" = exportFormat.value): string {
+  const clean = path.trim();
+  if (!clean) return "";
+  const lower = clean.toLowerCase();
+  if (lower.endsWith(`.${format}`)) {
+    return clean;
+  }
+  if (lower.endsWith(".gif") || lower.endsWith(".webp")) {
+    const idx = clean.lastIndexOf(".");
+    return `${clean.substring(0, idx)}.${format}`;
+  }
+  return `${clean}.${format}`;
+}
+
+function setExportFormat(fmt: "gif" | "webp"): void {
+  exportFormat.value = fmt;
+  if (outputPath.value.trim()) {
+    outputPath.value = ensureFormatExtension(outputPath.value.trim(), fmt);
+  }
 }
 
 function readableError(error: unknown): string {
@@ -633,7 +651,7 @@ async function chooseVideo(): Promise<void> {
     const nextMedia = await probeMedia(selected);
     media.value = nextMedia;
     applyMediaDefaults(nextMedia);
-    outputPath.value = defaultGifPath(selected);
+    outputPath.value = defaultOutputPath(selected, exportFormat.value);
     status.value = "ready";
     statusMessage.value = "视频已就绪，可以调整参数并导出。";
   } catch (error) {
@@ -650,9 +668,9 @@ async function chooseOutput(): Promise<void> {
   }
 
   try {
-    const selected = await pickGifOutput(outputPath.value || undefined);
+    const selected = await pickMediaOutput(outputPath.value || undefined, exportFormat.value);
     if (selected) {
-      outputPath.value = ensureGifExtension(selected);
+      outputPath.value = ensureFormatExtension(selected, exportFormat.value);
       errorMessage.value = "";
     }
   } catch (error) {
@@ -679,9 +697,11 @@ async function chooseImage(): Promise<void> {
 }
 
 function buildRenderPlan(): RenderPlan {
+  const finalOut = ensureFormatExtension(outputPath.value.trim(), exportFormat.value);
   return {
     inputPath: inputPath.value,
-    outputPath: ensureGifExtension(outputPath.value.trim()),
+    outputPath: finalOut,
+    format: exportFormat.value,
     startSecs: Number(startSecs.value),
     endSecs: Number(endSecs.value),
     crop: useCrop.value ? { ...crop } : null,
@@ -879,6 +899,12 @@ async function loadHistoryPlan(record: ExportRecord): Promise<void> {
     imageWidth.value = p.imageOverlay.width;
   } else {
     useImage.value = false;
+  }
+
+  if (p.format === "webp" || record.filePath.toLowerCase().endsWith(".webp")) {
+    exportFormat.value = "webp";
+  } else {
+    exportFormat.value = "gif";
   }
 
   outputPath.value = p.outputPath;
@@ -1105,10 +1131,15 @@ onBeforeUnmount(() => {
           >
             <div class="sidebar-history-thumb">
               <img v-if="item.previewUrl" :src="item.previewUrl" :alt="item.fileName" />
-              <span v-else class="thumb-fallback">GIF</span>
+              <span v-else class="thumb-fallback">{{ item.fileName.toLowerCase().endsWith('.webp') ? 'WEBP' : 'GIF' }}</span>
             </div>
             <div class="sidebar-history-info">
-              <span class="sidebar-history-name">{{ item.fileName }}</span>
+              <div class="sidebar-history-name-row">
+                <span class="sidebar-history-name">{{ item.fileName }}</span>
+                <span class="history-format-badge" :class="item.fileName.toLowerCase().endsWith('.webp') ? 'badge-webp' : 'badge-gif'">
+                  {{ item.fileName.toLowerCase().endsWith('.webp') ? 'WEBP' : 'GIF' }}
+                </span>
+              </div>
               <div class="sidebar-history-meta">
                 <span class="sidebar-history-size">{{ formatBytes(item.outputBytes) }}</span>
                 <span class="sidebar-history-time">{{ formatRelativeTime(item.timestamp) }}</span>
@@ -1458,9 +1489,34 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="control-section output-section">
-              <div class="section-label"><span>04</span> 保存到</div>
+              <div class="section-label-row">
+                <div class="section-label"><span>04</span> 格式与保存</div>
+                <span class="format-hint">{{ exportFormat === 'webp' ? '小体积·真彩色' : '通用兼容' }}</span>
+              </div>
+              <div class="format-pills">
+                <button
+                  type="button"
+                  class="format-pill"
+                  :class="{ active: exportFormat === 'gif' }"
+                  title="经典 GIF 动图格式，兼容所有聊天软件与平台"
+                  @click="setExportFormat('gif')"
+                >
+                  <span class="format-pill-name">GIF</span>
+                  <span class="format-pill-sub">经典通用</span>
+                </button>
+                <button
+                  type="button"
+                  class="format-pill"
+                  :class="{ active: exportFormat === 'webp' }"
+                  title="现代 WebP 动图格式，体积缩小 40%~60%，极速导出"
+                  @click="setExportFormat('webp')"
+                >
+                  <span class="format-pill-name">WebP</span>
+                  <span class="format-pill-badge">推荐·小体积</span>
+                </button>
+              </div>
               <div class="output-path-row">
-                <input v-model="outputPath" type="text" placeholder="GIF 输出路径" />
+                <input v-model="outputPath" type="text" :placeholder="exportFormat === 'webp' ? 'WebP 输出路径' : 'GIF 输出路径'" />
                 <button type="button" aria-label="选择输出路径" @click="chooseOutput">…</button>
               </div>
             </div>
@@ -1511,7 +1567,7 @@ onBeforeUnmount(() => {
             </button>
             <button v-if="isBusy" class="secondary-action danger" type="button" @click="stopRender">取消</button>
             <button v-else class="primary-action" type="button" :disabled="!canRender || !isDesktop" @click="startRender">
-              {{ status === "completed" ? "再次导出" : "导出 GIF" }} <span>↗</span>
+              {{ status === "completed" ? "再次导出" : (exportFormat === "webp" ? "导出 WebP" : "导出 GIF") }} <span>↗</span>
             </button>
           </div>
         </section>
@@ -1557,7 +1613,7 @@ onBeforeUnmount(() => {
                 <div class="history-card-thumb">
                   <img v-if="item.previewUrl" :src="item.previewUrl" :alt="item.fileName" />
                   <div v-else class="card-thumb-fallback">
-                    <span>GIF</span>
+                    <span>{{ item.fileName.toLowerCase().endsWith('.webp') ? 'WEBP' : 'GIF' }}</span>
                   </div>
                   <span class="history-card-size-pill">{{ formatBytes(item.outputBytes) }}</span>
                 </div>
@@ -1565,6 +1621,9 @@ onBeforeUnmount(() => {
                 <div class="history-card-body">
                   <div class="history-card-title-row">
                     <strong class="history-card-filename" :title="item.fileName">{{ item.fileName }}</strong>
+                    <span class="history-format-badge" :class="item.fileName.toLowerCase().endsWith('.webp') ? 'badge-webp' : 'badge-gif'">
+                      {{ item.fileName.toLowerCase().endsWith('.webp') ? 'WEBP' : 'GIF' }}
+                    </span>
                     <small class="history-card-time">{{ formatRelativeTime(item.timestamp) }}</small>
                   </div>
                   <div class="history-card-desc">

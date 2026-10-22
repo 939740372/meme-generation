@@ -111,6 +111,19 @@ struct RenderPlan {
     quality: Option<String>,
     text_overlay: Option<TextOverlay>,
     image_overlay: Option<ImageOverlay>,
+    #[serde(default)]
+    format: Option<String>,
+}
+
+impl RenderPlan {
+    fn is_webp(&self) -> bool {
+        if let Some(fmt) = &self.format {
+            if fmt.eq_ignore_ascii_case("webp") {
+                return true;
+            }
+        }
+        self.output_path.to_ascii_lowercase().ends_with(".webp")
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -446,13 +459,29 @@ fn validate_render_plan(plan: &RenderPlan, media: &MediaInfo) -> CommandResult<(
     }
 
     let output_path = Path::new(&plan.output_path);
-    if output_path
+    let ext = output_path
         .extension()
         .and_then(|extension| extension.to_str())
-        .map(|extension| extension.to_ascii_lowercase() != "gif")
-        .unwrap_or(true)
-    {
-        return Err(app_error("INVALID_OUTPUT", "输出文件必须使用 .gif 扩展名。"));
+        .map(|extension| extension.to_ascii_lowercase());
+    match ext.as_deref() {
+        Some("gif") | Some("webp") => {}
+        _ => {
+            return Err(app_error(
+                "INVALID_OUTPUT",
+                "输出文件必须使用 .gif 或 .webp 扩展名。",
+            ));
+        }
+    }
+    if let Some(fmt) = &plan.format {
+        let fmt_lower = fmt.to_ascii_lowercase();
+        if (fmt_lower == "webp" && ext.as_deref() != Some("webp"))
+            || (fmt_lower == "gif" && ext.as_deref() != Some("gif"))
+        {
+            return Err(app_error(
+                "INVALID_OUTPUT_FORMAT",
+                "输出格式设置与文件扩展名不一致。",
+            ));
+        }
     }
     if output_path.exists() {
         return Err(app_error("OUTPUT_EXISTS", "输出文件已存在，请选择另一个路径。"));
@@ -538,27 +567,38 @@ fn build_filter_graph(plan: &RenderPlan) -> String {
         source.push_str(&format!(",drawtext={}", drawtext_parts.join(":")));
     }
 
-    let mut graph = format!("[0:v]{}[base]", source);
-    let final_label = if let Some(image) = &plan.image_overlay {
-        graph.push_str(&format!(
-            ";[1:v]scale={}:{}:flags=lanczos[sticker];[base][sticker]overlay={}:{}:eof_action=pass[composed]",
-            image.width, -1, image.x, image.y
-        ));
-        "[composed]"
+    if plan.is_webp() {
+        if let Some(image) = &plan.image_overlay {
+            format!(
+                "[0:v]{}[base];[1:v]scale={}:{}:flags=lanczos[sticker];[base][sticker]overlay={}:{}:eof_action=pass[vout]",
+                source, image.width, -1, image.x, image.y
+            )
+        } else {
+            format!("[0:v]{}[vout]", source)
+        }
     } else {
-        "[base]"
-    };
-    let dither = match plan.quality.as_deref() {
-        Some("low") => "bayer:bayer_scale=3",
-        Some("high") => "sierra2_4a",
-        Some("none") => "none",
-        _ => "sierra2_4a",
-    };
-    graph.push_str(&format!(
-        ";{}split[gif][palette];[palette]palettegen=stats_mode=diff[p];[gif][p]paletteuse=dither={}[vout]",
-        final_label, dither
-    ));
-    graph
+        let mut graph = format!("[0:v]{}[base]", source);
+        let final_label = if let Some(image) = &plan.image_overlay {
+            graph.push_str(&format!(
+                ";[1:v]scale={}:{}:flags=lanczos[sticker];[base][sticker]overlay={}:{}:eof_action=pass[composed]",
+                image.width, -1, image.x, image.y
+            ));
+            "[composed]"
+        } else {
+            "[base]"
+        };
+        let dither = match plan.quality.as_deref() {
+            Some("low") => "bayer:bayer_scale=3",
+            Some("high") => "sierra2_4a",
+            Some("none") => "none",
+            _ => "sierra2_4a",
+        };
+        graph.push_str(&format!(
+            ";{}split[gif][palette];[palette]palettegen=stats_mode=diff[p];[gif][p]paletteuse=dither={}[vout]",
+            final_label, dither
+        ));
+        graph
+    }
 }
 
 fn build_ffmpeg_args(plan: &RenderPlan) -> Vec<String> {
@@ -589,18 +629,40 @@ fn build_ffmpeg_args(plan: &RenderPlan) -> Vec<String> {
         ]);
     }
 
-    args.extend([
-        "-filter_complex".to_string(),
-        filter_graph,
-        "-map".to_string(),
-        "[vout]".to_string(),
-        "-an".to_string(),
-        "-loop".to_string(),
-        "0".to_string(),
-        "-f".to_string(),
-        "gif".to_string(),
-        plan.output_path.clone(),
-    ]);
+    if plan.is_webp() {
+        let q_val = match plan.quality.as_deref() {
+            Some("low") => "55",
+            Some("high") => "90",
+            _ => "75",
+        };
+        args.extend([
+            "-filter_complex".to_string(),
+            filter_graph,
+            "-map".to_string(),
+            "[vout]".to_string(),
+            "-c:v".to_string(),
+            "libwebp".to_string(),
+            "-q:v".to_string(),
+            q_val.to_string(),
+            "-loop".to_string(),
+            "0".to_string(),
+            "-an".to_string(),
+            plan.output_path.clone(),
+        ]);
+    } else {
+        args.extend([
+            "-filter_complex".to_string(),
+            filter_graph,
+            "-map".to_string(),
+            "[vout]".to_string(),
+            "-an".to_string(),
+            "-loop".to_string(),
+            "0".to_string(),
+            "-f".to_string(),
+            "gif".to_string(),
+            plan.output_path.clone(),
+        ]);
+    }
     args
 }
 
@@ -996,6 +1058,7 @@ mod tests {
             quality: None,
             text_overlay: None,
             image_overlay: None,
+            format: None,
         };
         let graph = build_filter_graph(&plan);
         assert!(graph.contains("palettegen"));
@@ -1027,6 +1090,7 @@ mod tests {
                 box_opacity: Some(0.65),
             }),
             image_overlay: None,
+            format: Some("gif".to_string()),
         };
         let graph = build_filter_graph(&plan);
         assert!(graph.contains("drawtext="));
@@ -1061,10 +1125,76 @@ mod tests {
                 box_opacity: None,
             }),
             image_overlay: None,
+            format: None,
         };
         let graph = build_filter_graph(&plan);
         assert!(graph.contains("box=0"));
         assert!(!graph.contains("borderw="));
+    }
+
+    #[test]
+    fn builds_webp_filter_graph_without_palette() {
+        let plan = RenderPlan {
+            input_path: "input.mp4".to_string(),
+            output_path: "output.webp".to_string(),
+            start_secs: 0.0,
+            end_secs: 2.0,
+            crop: None,
+            output_width: 480,
+            fps: 15,
+            quality: Some("high".to_string()),
+            text_overlay: None,
+            image_overlay: None,
+            format: Some("webp".to_string()),
+        };
+        let graph = build_filter_graph(&plan);
+        assert!(!graph.contains("palettegen"));
+        assert!(!graph.contains("paletteuse"));
+        assert!(graph.ends_with("[vout]"));
+
+        let args = build_ffmpeg_args(&plan);
+        assert!(args.iter().any(|arg| arg == "libwebp"));
+        assert!(args.iter().any(|arg| arg == "-q:v"));
+        assert!(args.iter().any(|arg| arg == "90"));
+        assert!(!args.iter().any(|arg| arg == "-f"));
+    }
+
+    #[test]
+    fn validates_render_plan_supports_gif_and_webp() {
+        let media = MediaInfo {
+            path: "in.mp4".to_string(),
+            file_name: "in.mp4".to_string(),
+            format: "mov,mp4,m4a,3gp,3g2,mj2".to_string(),
+            duration_secs: 5.0,
+            width: 1280,
+            height: 720,
+            fps: 30.0,
+        };
+
+        let temp_dir = env::temp_dir();
+        let webp_out = temp_dir.join("test_valid.webp");
+        let plan = RenderPlan {
+            input_path: "in.mp4".to_string(),
+            output_path: webp_out.to_string_lossy().to_string(),
+            start_secs: 0.0,
+            end_secs: 2.0,
+            crop: None,
+            output_width: 320,
+            fps: 15,
+            quality: None,
+            text_overlay: None,
+            image_overlay: None,
+            format: Some("webp".to_string()),
+        };
+        assert!(validate_render_plan(&plan, &media).is_ok());
+
+        // 测试格式不匹配
+        let mismatch_plan = RenderPlan {
+            output_path: webp_out.to_string_lossy().to_string(),
+            format: Some("gif".to_string()),
+            ..plan.clone()
+        };
+        assert!(validate_render_plan(&mismatch_plan, &media).is_err());
     }
 
     #[test]

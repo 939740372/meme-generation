@@ -2452,3 +2452,103 @@ code {
   color: var(--muted);
   font-size: 9px;
 }
+
+/* 动图格式切换 (GIF / WebP) */
+.format-hint {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.format-pills {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.format-pill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--line-strong);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 140ms ease;
+  font-family: var(--sans);
+}
+
+.format-pill:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--fg);
+}
+
+.format-pill.active {
+  background: rgba(215, 244, 106, 0.08);
+  border-color: var(--accent);
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(215, 244, 106, 0.12);
+}
+
+.format-pill:nth-child(2).active {
+  background: rgba(86, 212, 245, 0.08);
+  border-color: #56d4f5;
+  box-shadow: 0 0 10px rgba(86, 212, 245, 0.15);
+}
+
+.format-pill-name {
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+
+.format-pill-sub {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.format-pill-badge {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(86, 212, 245, 0.18);
+  color: #7ce7ff;
+  font-weight: 600;
+  border: 1px solid rgba(86, 212, 245, 0.3);
+}
+
+/* 格式标识徽章 (历史卡片与抽屉) */
+.sidebar-history-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+}
+
+.history-format-badge {
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 2px;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.history-format-badge.badge-gif {
+  background: rgba(215, 244, 106, 0.12);
+  color: var(--accent);
+  border: 1px solid rgba(215, 244, 106, 0.25);
+}
+
+.history-format-badge.badge-webp {
+  background: rgba(86, 212, 245, 0.15);
+  color: #56d4f5;
+  border: 1px solid rgba(86, 212, 245, 0.35);
+}
