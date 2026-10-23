@@ -149,7 +149,13 @@ async function prepareTarget(target) {
 }
 
 function verifyBinaries(ffmpegPath, ffprobePath) {
-  if (process.platform === 'darwin' && os.arch() === 'arm64' && ffmpegPath.includes('aarch64-apple-darwin')) {
+  let hostTarget = '';
+  try {
+    hostTarget = getHostTarget();
+  } catch {
+    hostTarget = '';
+  }
+  if (hostTarget && ffmpegPath.includes(hostTarget)) {
     try {
       const versionOutput = execFileSync(ffmpegPath, ['-version'], { encoding: 'utf-8' });
       const firstLine = versionOutput.split('\n')[0];

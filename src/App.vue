@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import {
   cancelRender,
+  checkGitHubUpdate,
   copyFileToClipboard,
   extractVideoFrame,
   getBuiltinSfx,
@@ -9,8 +10,10 @@ import {
   getDesktopInfo,
   getHardwareAccelerationInfo,
   getVideoAssetUrl,
+  GITHUB_RELEASES_URL,
   isDesktopRuntime,
   listenForRenderEvents,
+  openExternalUrl,
   pickAudioFile,
   pickMediaOutput,
   pickPng,
@@ -30,6 +33,7 @@ import {
   type ImageAdjustments,
   type MediaInfo,
   type RenderPlan,
+  type UpdateInfo,
 } from "./lib/desktop";
 import {
   BUILTIN_TEMPLATES,
@@ -90,6 +94,53 @@ const showAdvancedText = ref(false);
 const showExactTextCoords = ref(false);
 const showExactCropCoords = ref(false);
 const showExactStickerCoords = ref(false);
+
+// 远程版本更新检查状态
+const updateInfo = ref<UpdateInfo | null>(null);
+const isCheckingUpdate = ref(false);
+const isUpdateModalOpen = ref(false);
+const appVersion = computed(() => desktopInfo.value?.version || "0.1.0");
+const hasNewVersion = computed(() => Boolean(updateInfo.value?.hasUpdate));
+
+async function handleCheckUpdate(silent = false): Promise<void> {
+  if (isCheckingUpdate.value) return;
+  isCheckingUpdate.value = true;
+  try {
+    const info = await checkGitHubUpdate(
+      appVersion.value,
+      desktopInfo.value?.platform || ""
+    );
+    updateInfo.value = info;
+    if (info.hasUpdate) {
+      if (!silent) {
+        isUpdateModalOpen.value = true;
+      } else {
+        showToast(`🎉 发现新版本 v${info.latestVersion}，点击右上角版本号可一键更新`);
+      }
+    } else if (!silent) {
+      isUpdateModalOpen.value = true;
+      showToast(`当前已是最新版本 (v${appVersion.value})`);
+    }
+  } catch {
+    if (!silent) {
+      isUpdateModalOpen.value = true;
+      showToast("无法连接 GitHub 检查更新，可直接前往 Releases 页面查看");
+    }
+  } finally {
+    isCheckingUpdate.value = false;
+  }
+}
+
+async function handleDownloadUpdate(): Promise<void> {
+  const targetUrl = updateInfo.value?.downloadUrl || GITHUB_RELEASES_URL;
+  await openExternalUrl(targetUrl);
+  showToast("已在浏览器中打开安装包下载链接");
+}
+
+async function handleOpenReleasesPage(): Promise<void> {
+  const pageUrl = updateInfo.value?.releasePageUrl || GITHUB_RELEASES_URL;
+  await openExternalUrl(pageUrl);
+}
 
 function toggleDrawerTab(tab: "history" | "templates" | "stickers" | "queue" | "sfx"): void {
   if (isDrawerOpen.value && drawerTab.value === tab) {
@@ -2907,6 +2958,8 @@ onMounted(async () => {
     hwAccelInfo.value = await getHardwareAccelerationInfo();
     await connectDesktopEvents();
     await restoreDraftIfAvailable();
+    // 启动后静默检查远程 GitHub Releases 更新
+    handleCheckUpdate(true).catch(() => {});
     if (stageRef.value && typeof ResizeObserver !== "undefined") {
       resizeObserver = new ResizeObserver(() => {
         updateStageSize();
@@ -3047,10 +3100,18 @@ onBeforeUnmount(() => {
             ↺ 重置
           </button>
 
-          <div class="runtime-pill" :title="runtimeLabel">
-            <span class="runtime-dot" :class="{ offline: !isDesktop }"></span>
-            <span>{{ isDesktop ? "桌面端" : "预览" }}</span>
-          </div>
+          <button
+            type="button"
+            class="runtime-pill version-update-btn"
+            :class="{ 'has-update': hasNewVersion }"
+            :title="hasNewVersion ? `发现新版本 v${updateInfo?.latestVersion}，点击查看更新` : `${runtimeLabel} · 点击检查 GitHub Releases 更新`"
+            @click="hasNewVersion ? (isUpdateModalOpen = true) : handleCheckUpdate(false)"
+          >
+            <span class="runtime-dot" :class="{ offline: !isDesktop, 'update-dot': hasNewVersion }"></span>
+            <span>v{{ appVersion }}</span>
+            <em v-if="hasNewVersion" class="update-pill-tag">新版本</em>
+            <small v-else-if="isCheckingUpdate" class="update-checking-text">检查中…</small>
+          </button>
         </div>
       </header>
 
@@ -4779,6 +4840,68 @@ onBeforeUnmount(() => {
             <button type="button" class="secondary-action" @click="isSaveTemplateModalOpen = false">取消</button>
             <button type="button" class="primary-action" :disabled="!newTemplateName.trim()" @click="confirmSaveTemplate">
               保存模板
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- 版本与远程更新检查 Modal 对话框 -->
+    <Transition name="modal-fade">
+      <div v-if="isUpdateModalOpen" class="modal-backdrop" @click="isUpdateModalOpen = false">
+        <div class="modal-box update-modal-box" @click.stop>
+          <div class="modal-header">
+            <strong>{{ hasNewVersion ? "🎉 发现新版本" : "📦 版本与更新检查" }}</strong>
+            <button type="button" class="modal-close-btn" @click="isUpdateModalOpen = false">✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="update-version-compare">
+              <div class="version-card">
+                <span>当前版本</span>
+                <strong>v{{ appVersion }}</strong>
+                <small>{{ desktopInfo?.platform || "Desktop" }}</small>
+              </div>
+              <span class="version-arrow">→</span>
+              <div class="version-card" :class="{ 'is-latest': hasNewVersion }">
+                <span>GitHub 最新版本</span>
+                <strong>v{{ updateInfo?.latestVersion || appVersion }}</strong>
+                <small>{{ hasNewVersion ? "可立即更新" : "已是最新" }}</small>
+              </div>
+            </div>
+
+            <template v-if="hasNewVersion && updateInfo">
+              <div class="update-notes-box">
+                <div class="update-notes-title">
+                  <span>{{ updateInfo.releaseName }}</span>
+                  <small v-if="updateInfo.assetName">{{ updateInfo.assetName }}</small>
+                </div>
+                <pre class="update-notes-content">{{ updateInfo.releaseNotes }}</pre>
+              </div>
+            </template>
+            <p v-else class="modal-hint">
+              当前安装的 <strong>表情工坊 v{{ appVersion }}</strong> 已是最新版本（内置免配置 FFmpeg / FFprobe 引擎）。你也可以前往 GitHub Releases 页面查看历史版本或下载 Windows / macOS 安装包。
+            </p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="secondary-action" @click="handleOpenReleasesPage">
+              查看 GitHub Releases
+            </button>
+            <button
+              v-if="hasNewVersion"
+              type="button"
+              class="primary-action"
+              @click="handleDownloadUpdate"
+            >
+              🚀 下载最新安装包
+            </button>
+            <button
+              v-else
+              type="button"
+              class="primary-action"
+              :disabled="isCheckingUpdate"
+              @click="handleCheckUpdate(false)"
+            >
+              {{ isCheckingUpdate ? "正在检查…" : "🔄 重新检查" }}
             </button>
           </div>
         </div>
