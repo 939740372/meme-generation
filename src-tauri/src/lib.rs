@@ -351,6 +351,18 @@ fn resolve_binary(name: &str) -> PathBuf {
     PathBuf::from(name)
 }
 
+fn new_hidden_command<S: AsRef<std::ffi::OsStr>>(program: S) -> Command {
+    #[allow(unused_mut)]
+    let mut cmd = Command::new(program);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
 fn detect_system_font() -> Option<String> {
     let candidates: &[&str] = if cfg!(target_os = "macos") {
         &[
@@ -367,9 +379,11 @@ fn detect_system_font() -> Option<String> {
         ]
     } else if cfg!(target_os = "windows") {
         &[
-            "C:\\Windows\\Fonts\\msyh.ttc",
-            "C:\\Windows\\Fonts\\simhei.ttf",
-            "C:\\Windows\\Fonts\\arial.ttf",
+            "C:/Windows/Fonts/msyh.ttc",
+            "C:/Windows/Fonts/msyhbd.ttc",
+            "C:/Windows/Fonts/simhei.ttf",
+            "C:/Windows/Fonts/simsun.ttc",
+            "C:/Windows/Fonts/arial.ttf",
         ]
     } else {
         &[
@@ -381,7 +395,7 @@ fn detect_system_font() -> Option<String> {
 
     for font in candidates {
         if Path::new(font).exists() {
-            return Some((*font).to_string());
+            return Some((*font).replace('\\', "/"));
         }
     }
     None
@@ -389,7 +403,7 @@ fn detect_system_font() -> Option<String> {
 
 fn path_to_string(path: &Path) -> CommandResult<String> {
     path.to_str()
-        .map(str::to_string)
+        .map(|s| s.strip_prefix(r"\\?\").unwrap_or(s).to_string())
         .ok_or_else(|| app_error("INVALID_PATH", "文件路径包含无法处理的字符。"))
 }
 
@@ -428,7 +442,7 @@ fn probe_media(path: &Path) -> CommandResult<MediaInfo> {
     validate_input_file(path)?;
     let path_string = path_to_string(path)?;
     let ffprobe_bin = resolve_binary("ffprobe");
-    let output = Command::new(&ffprobe_bin)
+    let output = new_hidden_command(&ffprobe_bin)
         .args([
             "-v",
             "error",
@@ -522,7 +536,7 @@ fn probe_media(path: &Path) -> CommandResult<MediaInfo> {
 }
 
 fn check_has_audio_stream(ffprobe_bin: &Path, path: &str) -> bool {
-    let output = Command::new(ffprobe_bin)
+    let output = new_hidden_command(ffprobe_bin)
         .args([
             "-v",
             "error",
@@ -1486,7 +1500,7 @@ pub struct HardwareAccelerationInfo {
 }
 
 pub fn detect_hardware_acceleration(ffmpeg_bin: &Path) -> HardwareAccelerationInfo {
-    let output = Command::new(ffmpeg_bin)
+    let output = new_hidden_command(ffmpeg_bin)
         .args(["-hide_banner", "-encoders"])
         .output();
 
@@ -1788,7 +1802,7 @@ fn build_ffmpeg_args(plan: &RenderPlan) -> Vec<String> {
 
 fn ffmpeg_supports_filter(filter_name: &str) -> Option<bool> {
     let ffmpeg_bin = resolve_binary("ffmpeg");
-    let output = Command::new(&ffmpeg_bin)
+    let output = new_hidden_command(&ffmpeg_bin)
         .args(["-hide_banner", "-filters"])
         .output()
         .ok()?;
@@ -2007,7 +2021,7 @@ fn render_gif(
     }
     let args = build_ffmpeg_args(&plan);
     let ffmpeg_bin = resolve_binary("ffmpeg");
-    let mut child = Command::new(&ffmpeg_bin)
+    let mut child = new_hidden_command(&ffmpeg_bin)
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -2109,7 +2123,7 @@ fn copy_file_to_clipboard(path: String) -> CommandResult<()> {
     {
         let escaped = path.replace('\'', "''");
         let script = format!("Set-Clipboard -Path '{}'", escaped);
-        let status = Command::new("powershell")
+        let status = new_hidden_command("powershell")
             .args(["-NoProfile", "-Command", &script])
             .status();
         match status {
@@ -2363,7 +2377,7 @@ fn extract_video_frame(
     let scale_filter = format!("scale='min({},iw)':-2", limit_w);
     let time_str = format_secs(time_secs);
 
-    let output = Command::new(&ffmpeg_bin)
+    let output = new_hidden_command(&ffmpeg_bin)
         .args([
             "-ss",
             &time_str,
@@ -3480,5 +3494,19 @@ mod tests {
         };
         let graph = build_filter_graph(&plan);
         assert!(graph.contains("scale=320:-1:flags=lanczos,fps=12,eq=brightness=0.125:contrast=1.30:saturation=1.60,hue=h=-45,unsharp=5:5:1.25:5:5:0.0,gblur=sigma=1.60,vignette=PI/4[base]"));
+    }
+
+    #[test]
+    fn windows_font_path_and_unc_prefix_compatibility() {
+        // Verify Windows drive colon is escaped cleanly without backslash ambiguity when normalized to '/'
+        let win_font = "C:/Windows/Fonts/msyh.ttc";
+        assert_eq!(escape_drawtext(win_font), r"C\:/Windows/Fonts/msyh.ttc");
+
+        // Verify extended-length Windows UNC prefix \\?\ is stripped by path_to_string
+        let unc_path = Path::new(r"\\?\C:\Users\meme\stickers\deal_with_it.png");
+        assert_eq!(
+            path_to_string(unc_path).unwrap(),
+            r"C:\Users\meme\stickers\deal_with_it.png"
+        );
     }
 }

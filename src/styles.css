@@ -5645,3 +5645,136 @@ code {
   font-size: 12px;
   color: #cbd5e1;
 }
+
+/* ==================== 版本胶囊与远程更新检查弹窗 (cross-platform-release-updater) ==================== */
+.version-update-btn {
+  cursor: pointer;
+  transition: all 0.16s ease;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.version-update-btn:hover {
+  border-color: rgba(215, 244, 106, 0.45);
+  background: rgba(215, 244, 106, 0.08);
+  color: #ffffff;
+}
+
+.version-update-btn.has-update {
+  border-color: rgba(249, 115, 22, 0.6);
+  background: rgba(249, 115, 22, 0.14);
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(249, 115, 22, 0.25);
+}
+
+.runtime-dot.update-dot {
+  background: #f97316;
+  box-shadow: 0 0 8px #f97316;
+}
+
+.update-pill-tag {
+  font-style: normal;
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #f97316;
+  color: #ffffff;
+}
+
+.update-checking-text {
+  font-family: var(--sans);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.update-modal-box {
+  max-width: 460px;
+}
+
+.update-version-compare {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.version-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(3, 7, 10, 0.4);
+}
+
+.version-card.is-latest {
+  border-color: rgba(215, 244, 106, 0.5);
+  background: rgba(215, 244, 106, 0.09);
+}
+
+.version-card span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.version-card strong {
+  font-family: var(--mono);
+  font-size: 18px;
+  color: #ffffff;
+}
+
+.version-card.is-latest strong {
+  color: var(--accent);
+}
+
+.version-card small {
+  font-size: 10.5px;
+  color: var(--faint);
+}
+
+.version-arrow {
+  font-size: 18px;
+  color: var(--muted);
+}
+
+.update-notes-box {
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(3, 7, 10, 0.45);
+  margin-bottom: 6px;
+}
+
+.update-notes-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 6px;
+}
+
+.update-notes-title small {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--accent);
+}
+
+.update-notes-content {
+  margin: 0;
+  max-height: 150px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.55;
+  color: #cbd5e1;
+}

@@ -1,7 +1,10 @@
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { revealItemInDir as openerRevealItemInDir } from "@tauri-apps/plugin-opener";
+import {
+  openUrl as openerOpenUrl,
+  revealItemInDir as openerRevealItemInDir,
+} from "@tauri-apps/plugin-opener";
 
 export interface DesktopInfo {
   version: string;
@@ -418,5 +421,140 @@ export function getVideoAssetUrl(filePath: string): string {
     return convertFileSrc(filePath);
   } catch {
     return "";
+  }
+}
+
+export interface UpdateInfo {
+  hasUpdate: boolean;
+  currentVersion: string;
+  latestVersion: string;
+  releaseName: string;
+  releaseNotes: string;
+  publishedAt: string;
+  downloadUrl: string;
+  assetName: string;
+  releasePageUrl: string;
+}
+
+const GITHUB_REPO = "939740372/meme-generation";
+export const GITHUB_RELEASES_URL = `https://github.com/${GITHUB_REPO}/releases`;
+export const GITHUB_ACTIONS_URL = `https://github.com/${GITHUB_REPO}/actions`;
+
+export function compareSemver(current: string, latest: string): number {
+  const clean = (v: string): number[] =>
+    v
+      .trim()
+      .replace(/^[vV]/, "")
+      .split("-")[0]
+      .split(".")
+      .map((part) => {
+        const n = parseInt(part, 10);
+        return Number.isFinite(n) ? n : 0;
+      });
+  const curParts = clean(current);
+  const latParts = clean(latest);
+  const len = Math.max(curParts.length, latParts.length, 3);
+  for (let i = 0; i < len; i++) {
+    const c = curParts[i] ?? 0;
+    const l = latParts[i] ?? 0;
+    if (l > c) return 1;
+    if (l < c) return -1;
+  }
+  return 0;
+}
+
+export async function checkGitHubUpdate(
+  currentVersion: string,
+  platformStr = ""
+): Promise<UpdateInfo> {
+  const fallback: UpdateInfo = {
+    hasUpdate: false,
+    currentVersion,
+    latestVersion: currentVersion,
+    releaseName: `v${currentVersion}`,
+    releaseNotes: "",
+    publishedAt: "",
+    downloadUrl: GITHUB_RELEASES_URL,
+    assetName: "",
+    releasePageUrl: GITHUB_RELEASES_URL,
+  };
+
+  const response = await fetch(
+    `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
+    {
+      headers: {
+        Accept: "application/vnd.github+json",
+      },
+    }
+  );
+
+  if (response.status === 404) {
+    // 仓库尚未创建首个 Release
+    return fallback;
+  }
+  if (!response.ok) {
+    throw new Error(`检查更新失败 (HTTP ${response.status})`);
+  }
+
+  const data = await response.json();
+  const tagName = String(data.tag_name || "").trim();
+  if (!tagName) {
+    return fallback;
+  }
+
+  const latestVersion = tagName.replace(/^[vV]/, "");
+  const hasUpdate = compareSemver(currentVersion, latestVersion) > 0;
+  const releasePageUrl = String(data.html_url || GITHUB_RELEASES_URL);
+  const assets: Array<{ name?: string; browser_download_url?: string }> =
+    Array.isArray(data.assets) ? data.assets : [];
+
+  const lowerPlat = (
+    platformStr ||
+    (typeof navigator !== "undefined" ? navigator.userAgent : "")
+  ).toLowerCase();
+  const isWindows = lowerPlat.includes("windows") || lowerPlat.includes("win");
+  const isMac =
+    lowerPlat.includes("macos") ||
+    lowerPlat.includes("mac") ||
+    lowerPlat.includes("darwin");
+
+  let matchedAsset: { name?: string; browser_download_url?: string } | undefined;
+  if (isWindows) {
+    matchedAsset =
+      assets.find((a) => a.name?.toLowerCase().endsWith("-setup.exe")) ||
+      assets.find((a) => a.name?.toLowerCase().endsWith(".exe")) ||
+      assets.find((a) => a.name?.toLowerCase().endsWith(".msi"));
+  } else if (isMac) {
+    matchedAsset = assets.find((a) => a.name?.toLowerCase().endsWith(".dmg"));
+  }
+  if (!matchedAsset && assets.length > 0) {
+    matchedAsset = assets[0];
+  }
+
+  return {
+    hasUpdate,
+    currentVersion,
+    latestVersion,
+    releaseName: String(data.name || tagName),
+    releaseNotes: String(data.body || "包含性能优化、画质精修与跨平台体验改进。"),
+    publishedAt: String(data.published_at || ""),
+    downloadUrl: String(matchedAsset?.browser_download_url || releasePageUrl),
+    assetName: String(matchedAsset?.name || ""),
+    releasePageUrl,
+  };
+}
+
+export async function openExternalUrl(url: string): Promise<void> {
+  if (!url) return;
+  if (isDesktopRuntime()) {
+    try {
+      await openerOpenUrl(url);
+      return;
+    } catch {
+      // fallback to window.open
+    }
+  }
+  if (typeof window !== "undefined") {
+    window.open(url, "_blank", "noopener,noreferrer");
   }
 }
