@@ -1,6 +1,6 @@
 # 全帧画质精修与色彩滤镜设计文档 (Design)
 
-- **状态**: ready-to-merge
+- **状态**: merged
 - **分支**: `feature/frame-image-adjustments`
 - **日期**: 2026-10-23
 

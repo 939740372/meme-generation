@@ -1,6 +1,6 @@
 # 全帧画质精修与色彩滤镜任务清单 (TODO)
 
-- **状态**: ready-to-merge
+- **状态**: merged
 - **分支**: `feature/frame-image-adjustments`
 
 ## 任务拆解
@@ -10,4 +10,4 @@
 - [x] 在 `src/lib/desktop.ts` 与 `src/lib/templates.ts` 中扩展 `ImageAdjustments` 类型定义
 - [x] 在 `src/App.vue` 与 `src/styles.css` 中实现「全帧画质与色彩精修」面板、一键精修预设、SVG 卷积锐化实时预览及草稿/历史持久化
 - [x] 运行 `pnpm build`、`cargo check`、`cargo test` 与真实 FFmpeg GIF 导出抽帧验证
-- [ ] 更新文档状态为 `merged` 并合并推送至 `origin/main`
+- [x] 更新文档状态为 `merged` 并合并推送至 `origin/main`
