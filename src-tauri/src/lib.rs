@@ -139,6 +139,25 @@ struct ImageOverlay {
     width: u32,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct ImageAdjustments {
+    #[serde(default)]
+    brightness: Option<i32>,
+    #[serde(default)]
+    contrast: Option<i32>,
+    #[serde(default)]
+    saturation: Option<i32>,
+    #[serde(default)]
+    sharpen: Option<u32>,
+    #[serde(default)]
+    blur: Option<u32>,
+    #[serde(default)]
+    hue: Option<i32>,
+    #[serde(default)]
+    vignette: Option<bool>,
+}
+
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct RenderPlan {
@@ -158,6 +177,8 @@ struct RenderPlan {
     format: Option<String>,
     #[serde(default)]
     video_filter: Option<String>,
+    #[serde(default)]
+    image_adjustments: Option<ImageAdjustments>,
     #[serde(default)]
     include_audio: Option<bool>,
     #[serde(default)]
@@ -651,6 +672,39 @@ fn validate_render_plan(plan: &RenderPlan, media: &MediaInfo) -> CommandResult<(
         }
     }
 
+    if let Some(adj) = &plan.image_adjustments {
+        if let Some(b) = adj.brightness {
+            if !(-100..=100).contains(&b) {
+                return Err(app_error("INVALID_IMAGE_ADJUSTMENTS", "亮度调节范围必须在 -100 到 100 之间。"));
+            }
+        }
+        if let Some(c) = adj.contrast {
+            if !(-100..=100).contains(&c) {
+                return Err(app_error("INVALID_IMAGE_ADJUSTMENTS", "对比度调节范围必须在 -100 到 100 之间。"));
+            }
+        }
+        if let Some(s) = adj.saturation {
+            if !(-100..=100).contains(&s) {
+                return Err(app_error("INVALID_IMAGE_ADJUSTMENTS", "饱和度调节范围必须在 -100 到 100 之间。"));
+            }
+        }
+        if let Some(sh) = adj.sharpen {
+            if sh > 100 {
+                return Err(app_error("INVALID_IMAGE_ADJUSTMENTS", "锐化强度必须在 0 到 100 之间。"));
+            }
+        }
+        if let Some(bl) = adj.blur {
+            if bl > 100 {
+                return Err(app_error("INVALID_IMAGE_ADJUSTMENTS", "模糊强度必须在 0 到 100 之间。"));
+            }
+        }
+        if let Some(h) = adj.hue {
+            if !(-180..=180).contains(&h) {
+                return Err(app_error("INVALID_IMAGE_ADJUSTMENTS", "色相偏移必须在 -180° 到 180° 之间。"));
+            }
+        }
+    }
+
     if let Some(bgm) = &plan.bgm_overlay {
         if !bgm.path.trim().is_empty() {
             let bgm_path = Path::new(&bgm.path);
@@ -800,6 +854,61 @@ fn map_video_filter(key: &str) -> Option<&'static str> {
     }
 }
 
+fn build_image_adjustments_filter(adj: &ImageAdjustments) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+
+    let brightness = adj.brightness.unwrap_or(0);
+    let contrast = adj.contrast.unwrap_or(0);
+    let saturation = adj.saturation.unwrap_or(0);
+    if brightness != 0 || contrast != 0 || saturation != 0 {
+        let mut eq_params: Vec<String> = Vec::new();
+        if brightness != 0 {
+            let b_val = (brightness as f64 * 0.005).clamp(-0.50, 0.50);
+            eq_params.push(format!("brightness={:.3}", b_val));
+        }
+        if contrast != 0 {
+            let c_val = (1.0 + contrast as f64 * 0.01).clamp(0.0, 2.0);
+            eq_params.push(format!("contrast={:.2}", c_val));
+        }
+        if saturation != 0 {
+            let s_val = if saturation >= 0 {
+                (1.0 + saturation as f64 * 0.015).clamp(1.0, 2.5)
+            } else {
+                (1.0 + saturation as f64 * 0.01).clamp(0.0, 1.0)
+            };
+            eq_params.push(format!("saturation={:.2}", s_val));
+        }
+        parts.push(format!("eq={}", eq_params.join(":")));
+    }
+
+    let hue = adj.hue.unwrap_or(0);
+    if hue != 0 {
+        parts.push(format!("hue=h={}", hue.clamp(-180, 180)));
+    }
+
+    let sharpen = adj.sharpen.unwrap_or(0);
+    if sharpen > 0 {
+        let amount = ((sharpen.min(100) as f64 / 100.0) * 2.50).clamp(0.03, 2.50);
+        parts.push(format!("unsharp=5:5:{:.2}:5:5:0.0", amount));
+    }
+
+    let blur = adj.blur.unwrap_or(0);
+    if blur > 0 {
+        let sigma = ((blur.min(100) as f64 / 100.0) * 8.00).clamp(0.08, 8.00);
+        parts.push(format!("gblur=sigma={:.2}", sigma));
+    }
+
+    if adj.vignette.unwrap_or(false) {
+        parts.push("vignette=PI/4".to_string());
+    }
+
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(","))
+    }
+}
+
 fn scale_text_overlay(text: &TextOverlay, crop_x: u32, crop_y: u32, scale_factor: f64) -> TextOverlay {
     if (scale_factor - 1.0).abs() < 1e-6 && crop_x == 0 && crop_y == 0 {
         return text.clone();
@@ -899,6 +1008,11 @@ fn build_filter_graph(plan: &RenderPlan) -> String {
         if let Some(filter_key) = &plan.video_filter {
             if let Some(expr) = map_video_filter(filter_key) {
                 source.push_str(&format!(",{}", expr));
+            }
+        }
+        if let Some(adj) = &plan.image_adjustments {
+            if let Some(adj_expr) = build_image_adjustments_filter(adj) {
+                source.push_str(&format!(",{}", adj_expr));
             }
         }
 
@@ -1015,6 +1129,11 @@ fn build_filter_graph(plan: &RenderPlan) -> String {
         if let Some(filter_key) = &plan.video_filter {
             if let Some(expr) = map_video_filter(filter_key) {
                 base_source.push_str(&format!(",{}", expr));
+            }
+        }
+        if let Some(adj) = &plan.image_adjustments {
+            if let Some(adj_expr) = build_image_adjustments_filter(adj) {
+                base_source.push_str(&format!(",{}", adj_expr));
             }
         }
 
@@ -3321,5 +3440,45 @@ mod tests {
                 f
             );
         }
+    }
+
+    #[test]
+    fn builds_image_adjustments_filter_chain_for_all_frames() {
+        // Default / zero adjustments produce no extra FFmpeg filter
+        let zero = ImageAdjustments::default();
+        assert_eq!(build_image_adjustments_filter(&zero), None);
+
+        // Brightness +25, Contrast +30, Saturation +40, Sharpen 50, Blur 20, Hue -45, Vignette true
+        let adj = ImageAdjustments {
+            brightness: Some(25),
+            contrast: Some(30),
+            saturation: Some(40),
+            sharpen: Some(50),
+            blur: Some(20),
+            hue: Some(-45),
+            vignette: Some(true),
+        };
+        let chain = build_image_adjustments_filter(&adj).expect("filter chain");
+        assert!(chain.contains("eq=brightness=0.125:contrast=1.30:saturation=1.60"));
+        assert!(chain.contains("hue=h=-45"));
+        assert!(chain.contains("unsharp=5:5:1.25:5:5:0.0"));
+        assert!(chain.contains("gblur=sigma=1.60"));
+        assert!(chain.contains("vignette=PI/4"));
+
+        // Verify integration into build_filter_graph before drawtext/sticker
+        let plan = RenderPlan {
+            input_path: "input.mp4".to_string(),
+            output_path: "output.gif".to_string(),
+            start_secs: 0.0,
+            end_secs: 2.0,
+            crop: None,
+            output_width: 320,
+            fps: 12,
+            image_adjustments: Some(adj),
+            format: Some("gif".to_string()),
+            ..Default::default()
+        };
+        let graph = build_filter_graph(&plan);
+        assert!(graph.contains("scale=320:-1:flags=lanczos,fps=12,eq=brightness=0.125:contrast=1.30:saturation=1.60,hue=h=-45,unsharp=5:5:1.25:5:5:0.0,gblur=sigma=1.60,vignette=PI/4[base]"));
     }
 }

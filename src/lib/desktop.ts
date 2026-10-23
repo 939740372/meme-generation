@@ -88,6 +88,16 @@ export interface HardwareAccelerationInfo {
   description: string;
 }
 
+export interface ImageAdjustments {
+  brightness?: number;
+  contrast?: number;
+  saturation?: number;
+  sharpen?: number;
+  blur?: number;
+  hue?: number;
+  vignette?: boolean;
+}
+
 export interface RenderPlan {
   inputPath: string;
   outputPath: string;
@@ -102,6 +112,7 @@ export interface RenderPlan {
   imageOverlay: ImageOverlay | null;
   format?: ExportFormat;
   videoFilter?: string;
+  imageAdjustments?: ImageAdjustments | null;
   includeAudio?: boolean;
   hwAccel?: HwAccelPolicy;
   hasAudio?: boolean;
