@@ -27,6 +27,7 @@ import {
   type ExportRecord,
   type HardwareAccelerationInfo,
   type HwAccelPolicy,
+  type ImageAdjustments,
   type MediaInfo,
   type RenderPlan,
 } from "./lib/desktop";
@@ -821,13 +822,172 @@ const currentFilterOption = computed(
   () => VIDEO_FILTERS.find((f) => f.key === currentVideoFilter.value) || VIDEO_FILTERS[0]
 );
 
-const currentVideoFilterCss = computed(() => currentFilterOption.value.cssFilter);
-
 function setVideoFilter(key: VideoFilterKey): void {
   currentVideoFilter.value = key;
   onManualParameterChange();
   showToast(`已应用画风特效: ${currentFilterOption.value.label} · ${currentFilterOption.value.badge}`);
 }
+
+// 全帧画质与色彩精修 (亮度、对比度、饱和度、锐化、模糊、色相、暗角)
+const imageAdjustments = reactive<Required<ImageAdjustments>>({
+  brightness: 0,
+  contrast: 0,
+  saturation: 0,
+  sharpen: 0,
+  blur: 0,
+  hue: 0,
+  vignette: false,
+});
+
+export interface AdjustmentPreset {
+  id: string;
+  label: string;
+  icon: string;
+  values: {
+    brightness: number;
+    contrast: number;
+    saturation: number;
+    sharpen: number;
+    blur: number;
+    hue: number;
+    vignette: boolean;
+  };
+}
+
+const ADJUSTMENT_PRESETS: AdjustmentPreset[] = [
+  {
+    id: "hd-sharpen",
+    label: "高清锐化",
+    icon: "✨",
+    values: { brightness: 6, contrast: 15, saturation: 12, sharpen: 65, blur: 0, hue: 0, vignette: false },
+  },
+  {
+    id: "brighten",
+    label: "提亮去暗",
+    icon: "☀️",
+    values: { brightness: 28, contrast: 12, saturation: 10, sharpen: 25, blur: 0, hue: 0, vignette: false },
+  },
+  {
+    id: "vivid",
+    label: "浓郁鲜艳",
+    icon: "🔥",
+    values: { brightness: 5, contrast: 22, saturation: 48, sharpen: 30, blur: 0, hue: 0, vignette: false },
+  },
+  {
+    id: "cyber-cool",
+    label: "赛博冷调",
+    icon: "❄️",
+    values: { brightness: 4, contrast: 25, saturation: 25, sharpen: 35, blur: 0, hue: -28, vignette: true },
+  },
+  {
+    id: "soft-blur",
+    label: "柔焦朦胧",
+    icon: "🌫️",
+    values: { brightness: 8, contrast: -8, saturation: -10, sharpen: 0, blur: 32, hue: 0, vignette: true },
+  },
+];
+
+const hasActiveAdjustments = computed(() => {
+  return (
+    imageAdjustments.brightness !== 0 ||
+    imageAdjustments.contrast !== 0 ||
+    imageAdjustments.saturation !== 0 ||
+    imageAdjustments.sharpen > 0 ||
+    imageAdjustments.blur > 0 ||
+    imageAdjustments.hue !== 0 ||
+    imageAdjustments.vignette
+  );
+});
+
+const activeAdjustmentsSummary = computed(() => {
+  const tags: string[] = [];
+  if (imageAdjustments.brightness !== 0) {
+    tags.push(`亮度${imageAdjustments.brightness > 0 ? `+${imageAdjustments.brightness}` : imageAdjustments.brightness}`);
+  }
+  if (imageAdjustments.contrast !== 0) {
+    tags.push(`对比${imageAdjustments.contrast > 0 ? `+${imageAdjustments.contrast}` : imageAdjustments.contrast}`);
+  }
+  if (imageAdjustments.saturation !== 0) {
+    tags.push(`饱和${imageAdjustments.saturation > 0 ? `+${imageAdjustments.saturation}` : imageAdjustments.saturation}`);
+  }
+  if (imageAdjustments.sharpen > 0) {
+    tags.push(`锐化${imageAdjustments.sharpen}`);
+  }
+  if (imageAdjustments.blur > 0) {
+    tags.push(`模糊${imageAdjustments.blur}`);
+  }
+  if (imageAdjustments.hue !== 0) {
+    tags.push(`色相${imageAdjustments.hue > 0 ? `+${imageAdjustments.hue}°` : `${imageAdjustments.hue}°`}`);
+  }
+  if (imageAdjustments.vignette) {
+    tags.push("暗角");
+  }
+  return tags.length > 0 ? tags.join(" · ") : "默认原片";
+});
+
+function resetImageAdjustments(silent = false): void {
+  imageAdjustments.brightness = 0;
+  imageAdjustments.contrast = 0;
+  imageAdjustments.saturation = 0;
+  imageAdjustments.sharpen = 0;
+  imageAdjustments.blur = 0;
+  imageAdjustments.hue = 0;
+  imageAdjustments.vignette = false;
+  if (!silent) {
+    showToast("已重置全帧画质与色彩精修");
+  }
+}
+
+function applyAdjustmentPreset(preset: AdjustmentPreset): void {
+  imageAdjustments.brightness = preset.values.brightness;
+  imageAdjustments.contrast = preset.values.contrast;
+  imageAdjustments.saturation = preset.values.saturation;
+  imageAdjustments.sharpen = preset.values.sharpen;
+  imageAdjustments.blur = preset.values.blur;
+  imageAdjustments.hue = preset.values.hue;
+  imageAdjustments.vignette = preset.values.vignette;
+  showToast(`已应用全帧画质预设：${preset.icon} ${preset.label}`);
+}
+
+const sharpenKernelMatrix = computed(() => {
+  const k = Number(((imageAdjustments.sharpen / 100) * 1.6).toFixed(3));
+  const center = Number((1 + 4 * k).toFixed(3));
+  const neg = Number((-k).toFixed(3));
+  return `0 ${neg} 0 ${neg} ${center} ${neg} 0 ${neg} 0`;
+});
+
+const combinedMediaFilterCss = computed(() => {
+  const filters: string[] = [];
+  if (currentFilterOption.value.cssFilter && currentFilterOption.value.cssFilter !== "none") {
+    filters.push(currentFilterOption.value.cssFilter);
+  }
+  if (imageAdjustments.brightness !== 0) {
+    const bPct = Math.max(20, Math.round(100 + imageAdjustments.brightness * 0.65));
+    filters.push(`brightness(${bPct}%)`);
+  }
+  if (imageAdjustments.contrast !== 0) {
+    const cPct = Math.max(10, Math.round(100 + imageAdjustments.contrast));
+    filters.push(`contrast(${cPct}%)`);
+  }
+  if (imageAdjustments.saturation !== 0) {
+    const sPct =
+      imageAdjustments.saturation >= 0
+        ? Math.round(100 + imageAdjustments.saturation * 1.5)
+        : Math.max(0, Math.round(100 + imageAdjustments.saturation));
+    filters.push(`saturate(${sPct}%)`);
+  }
+  if (imageAdjustments.hue !== 0) {
+    filters.push(`hue-rotate(${imageAdjustments.hue}deg)`);
+  }
+  if (imageAdjustments.blur > 0) {
+    const px = ((imageAdjustments.blur / 100) * 8).toFixed(2);
+    filters.push(`blur(${px}px)`);
+  }
+  if (imageAdjustments.sharpen > 0) {
+    filters.push("url(#studio-sharpen-filter)");
+  }
+  return filters.length > 0 ? filters.join(" ") : "none";
+});
 
 const stageRef = ref<HTMLElement | null>(null);
 const timelineTrackRef = ref<HTMLElement | null>(null);
@@ -1574,6 +1734,17 @@ function buildRenderPlan(): RenderPlan {
     fps: Number(fps.value),
     quality: currentQuality.value,
     videoFilter: currentVideoFilter.value !== "none" ? currentVideoFilter.value : undefined,
+    imageAdjustments: hasActiveAdjustments.value
+      ? {
+          brightness: Number(imageAdjustments.brightness),
+          contrast: Number(imageAdjustments.contrast),
+          saturation: Number(imageAdjustments.saturation),
+          sharpen: Number(imageAdjustments.sharpen),
+          blur: Number(imageAdjustments.blur),
+          hue: Number(imageAdjustments.hue),
+          vignette: Boolean(imageAdjustments.vignette),
+        }
+      : null,
     textOverlay: useText.value && activeLayers.length > 0 ? activeLayers[0] : null,
     textLayers: useText.value && activeLayers.length > 0 ? activeLayers : null,
     imageOverlay:
@@ -1822,6 +1993,18 @@ async function loadHistoryPlan(record: ExportRecord): Promise<void> {
     currentVideoFilter.value = p.videoFilter as VideoFilterKey;
   } else {
     currentVideoFilter.value = "none";
+  }
+
+  if (p.imageAdjustments) {
+    imageAdjustments.brightness = p.imageAdjustments.brightness ?? 0;
+    imageAdjustments.contrast = p.imageAdjustments.contrast ?? 0;
+    imageAdjustments.saturation = p.imageAdjustments.saturation ?? 0;
+    imageAdjustments.sharpen = p.imageAdjustments.sharpen ?? 0;
+    imageAdjustments.blur = p.imageAdjustments.blur ?? 0;
+    imageAdjustments.hue = p.imageAdjustments.hue ?? 0;
+    imageAdjustments.vignette = Boolean(p.imageAdjustments.vignette);
+  } else {
+    resetImageAdjustments(true);
   }
 
   if (p.bgmOverlay) {
@@ -2369,6 +2552,17 @@ function buildCurrentDraft(): StudioDraft {
     includeAudio: includeAudio.value,
     hwAccel: hwAccelPolicy.value,
     videoFilter: currentVideoFilter.value,
+    imageAdjustments: hasActiveAdjustments.value
+      ? {
+          brightness: Number(imageAdjustments.brightness),
+          contrast: Number(imageAdjustments.contrast),
+          saturation: Number(imageAdjustments.saturation),
+          sharpen: Number(imageAdjustments.sharpen),
+          blur: Number(imageAdjustments.blur),
+          hue: Number(imageAdjustments.hue),
+          vignette: Boolean(imageAdjustments.vignette),
+        }
+      : null,
     selectedPresetId: selectedPresetId.value,
     useText: useText.value,
     text: text.value,
@@ -2406,7 +2600,7 @@ function queueDraftSave(): void {
     clearTimeout(draftAutoSaveTimer);
   }
   draftAutoSaveTimer = setTimeout(() => {
-    if (!inputPath.value && !text.value && !useCrop.value && !bgmPath.value) {
+    if (!inputPath.value && !text.value && !useCrop.value && !bgmPath.value && !hasActiveAdjustments.value) {
       return;
     }
     saveDraftToStorage(buildCurrentDraft());
@@ -2414,7 +2608,15 @@ function queueDraftSave(): void {
 }
 
 const hasActiveDraftOrMedia = computed(() => {
-  return Boolean(media.value || inputPath.value || text.value || useCrop.value || useImage.value || bgmPath.value);
+  return Boolean(
+    media.value ||
+      inputPath.value ||
+      text.value ||
+      useCrop.value ||
+      useImage.value ||
+      bgmPath.value ||
+      hasActiveAdjustments.value
+  );
 });
 
 function resetWorkspace(): void {
@@ -2440,6 +2642,8 @@ function resetWorkspace(): void {
   exportFormat.value = "gif";
   includeAudio.value = true;
   hwAccelPolicy.value = "auto";
+  currentVideoFilter.value = "none";
+  resetImageAdjustments(true);
   bgmPath.value = "";
   bgmName.value = "";
   bgmDuration.value = 0;
@@ -2524,6 +2728,17 @@ async function restoreDraftIfAvailable(): Promise<void> {
           }
         }
         currentVideoFilter.value = (draft.videoFilter as VideoFilterKey) || "none";
+        if (draft.imageAdjustments) {
+          imageAdjustments.brightness = draft.imageAdjustments.brightness ?? 0;
+          imageAdjustments.contrast = draft.imageAdjustments.contrast ?? 0;
+          imageAdjustments.saturation = draft.imageAdjustments.saturation ?? 0;
+          imageAdjustments.sharpen = draft.imageAdjustments.sharpen ?? 0;
+          imageAdjustments.blur = draft.imageAdjustments.blur ?? 0;
+          imageAdjustments.hue = draft.imageAdjustments.hue ?? 0;
+          imageAdjustments.vignette = Boolean(draft.imageAdjustments.vignette);
+        } else {
+          resetImageAdjustments(true);
+        }
         selectedPresetId.value = draft.selectedPresetId;
         useText.value = draft.useText;
         if (draft.textLayers && draft.textLayers.length > 0) {
@@ -2664,6 +2879,14 @@ watch(
 
 watch(
   textLayers,
+  () => {
+    queueDraftSave();
+  },
+  { deep: true },
+);
+
+watch(
+  imageAdjustments,
   () => {
     queueDraftSave();
   },
@@ -2854,6 +3077,9 @@ onBeforeUnmount(() => {
                 <span v-if="currentVideoFilter !== 'none'" class="panel-chip chip-filter">
                   {{ currentFilterOption.icon }} {{ currentFilterOption.label }}
                 </span>
+                <span v-if="hasActiveAdjustments" class="panel-chip chip-adjust" :title="activeAdjustmentsSummary">
+                  ✨ {{ activeAdjustmentsSummary }}
+                </span>
               </div>
 
               <!-- 画布快捷图层开关 -->
@@ -2889,6 +3115,14 @@ onBeforeUnmount(() => {
             </div>
 
             <div ref="stageRef" class="preview-stage">
+              <!-- 动态 SVG 锐化卷积矩阵滤镜，供画布实时预览调用 -->
+              <svg width="0" height="0" style="position: absolute; pointer-events: none" aria-hidden="true">
+                <defs>
+                  <filter id="studio-sharpen-filter" color-interpolation-filters="sRGB">
+                    <feConvolveMatrix order="3" :kernelMatrix="sharpenKernelMatrix" preserveAlpha="true" />
+                  </filter>
+                </defs>
+              </svg>
               <template v-if="media">
                 <div
                   class="preview-art"
@@ -2899,8 +3133,8 @@ onBeforeUnmount(() => {
                     height: `${viewportRect.height}px`,
                   }"
                 >
-                  <!-- 视频真实画面层 (带全局滤镜) -->
-                  <div class="preview-media-container" :style="{ filter: currentVideoFilterCss }">
+                  <!-- 视频真实画面层 (带全局滤镜与全帧画质精修) -->
+                  <div class="preview-media-container" :style="{ filter: combinedMediaFilterCss }">
                     <video
                       v-if="isNativeVideoSupported && videoAssetUrl"
                       ref="previewVideoRef"
@@ -2926,6 +3160,7 @@ onBeforeUnmount(() => {
                       <div class="preview-orb orb-b"></div>
                     </div>
                   </div>
+                  <div v-if="imageAdjustments.vignette" class="preview-vignette-overlay" aria-hidden="true"></div>
                   <template v-if="useText">
                     <template v-for="layer in textLayers" :key="layer.id">
                       <div
@@ -3151,7 +3386,7 @@ onBeforeUnmount(() => {
                 @click="activeInspectorTab = 'canvas'"
               >
                 <span>📐 画面</span>
-                <i v-if="useCrop || currentVideoFilter !== 'none'" class="tab-active-dot"></i>
+                <i v-if="useCrop || currentVideoFilter !== 'none' || hasActiveAdjustments" class="tab-active-dot"></i>
               </button>
               <button
                 type="button"
@@ -3244,6 +3479,177 @@ onBeforeUnmount(() => {
                       <span class="filter-pill-icon">{{ f.icon }}</span>
                       <span class="filter-pill-label">{{ f.label }}</span>
                     </button>
+                  </div>
+                </div>
+
+                <!-- 全帧画质与色彩精修卡片 (亮度/对比度/饱和度/锐化/模糊/色相/暗角) -->
+                <div class="inspector-card">
+                  <div class="inspector-card-header">
+                    <strong>✨ 全帧画质与色彩精修</strong>
+                    <div class="adjust-header-actions">
+                      <span
+                        class="card-status-pill"
+                        :class="{ 'is-active': hasActiveAdjustments }"
+                        :title="activeAdjustmentsSummary"
+                      >
+                        {{ activeAdjustmentsSummary }}
+                      </span>
+                      <button
+                        v-if="hasActiveAdjustments"
+                        type="button"
+                        class="mini-reset-btn"
+                        title="重置全部画质与色彩参数"
+                        @click="resetImageAdjustments()"
+                      >
+                        ↺ 重置
+                      </button>
+                    </div>
+                  </div>
+
+                  <p class="inspector-hint">一键套用画质增强预设，或拖动滑块逐项微调（双击滑块可单项归零）：</p>
+                  <div class="adjust-preset-row">
+                    <button
+                      v-for="preset in ADJUSTMENT_PRESETS"
+                      :key="preset.id"
+                      type="button"
+                      class="adjust-preset-pill"
+                      :title="`一键应用：${preset.label}`"
+                      @click="applyAdjustmentPreset(preset)"
+                    >
+                      <span>{{ preset.icon }}</span>
+                      <span>{{ preset.label }}</span>
+                    </button>
+                  </div>
+
+                  <div class="adjust-sliders-grid">
+                    <!-- 亮度 -->
+                    <div class="adjust-slider-item">
+                      <div class="adjust-slider-label">
+                        <span>☀️ 亮度</span>
+                        <em :class="{ 'is-modified': imageAdjustments.brightness !== 0 }">
+                          {{ imageAdjustments.brightness > 0 ? `+${imageAdjustments.brightness}` : imageAdjustments.brightness }}
+                        </em>
+                      </div>
+                      <input
+                        v-model.number="imageAdjustments.brightness"
+                        type="range"
+                        min="-100"
+                        max="100"
+                        step="1"
+                        class="effect-range-slider"
+                        title="双击归零"
+                        @dblclick="imageAdjustments.brightness = 0"
+                      />
+                    </div>
+
+                    <!-- 对比度 -->
+                    <div class="adjust-slider-item">
+                      <div class="adjust-slider-label">
+                        <span>◐ 对比度</span>
+                        <em :class="{ 'is-modified': imageAdjustments.contrast !== 0 }">
+                          {{ imageAdjustments.contrast > 0 ? `+${imageAdjustments.contrast}` : imageAdjustments.contrast }}
+                        </em>
+                      </div>
+                      <input
+                        v-model.number="imageAdjustments.contrast"
+                        type="range"
+                        min="-100"
+                        max="100"
+                        step="1"
+                        class="effect-range-slider"
+                        title="双击归零"
+                        @dblclick="imageAdjustments.contrast = 0"
+                      />
+                    </div>
+
+                    <!-- 饱和度 -->
+                    <div class="adjust-slider-item">
+                      <div class="adjust-slider-label">
+                        <span>🎨 饱和度</span>
+                        <em :class="{ 'is-modified': imageAdjustments.saturation !== 0 }">
+                          {{ imageAdjustments.saturation > 0 ? `+${imageAdjustments.saturation}` : imageAdjustments.saturation }}
+                        </em>
+                      </div>
+                      <input
+                        v-model.number="imageAdjustments.saturation"
+                        type="range"
+                        min="-100"
+                        max="100"
+                        step="1"
+                        class="effect-range-slider"
+                        title="双击归零"
+                        @dblclick="imageAdjustments.saturation = 0"
+                      />
+                    </div>
+
+                    <!-- 画面锐化 -->
+                    <div class="adjust-slider-item">
+                      <div class="adjust-slider-label">
+                        <span>💎 画面锐化</span>
+                        <em :class="{ 'is-modified': imageAdjustments.sharpen > 0 }">
+                          {{ imageAdjustments.sharpen }}%
+                        </em>
+                      </div>
+                      <input
+                        v-model.number="imageAdjustments.sharpen"
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="1"
+                        class="effect-range-slider"
+                        title="双击归零 (FFmpeg unsharp 5×5 矩阵锐化)"
+                        @dblclick="imageAdjustments.sharpen = 0"
+                      />
+                    </div>
+
+                    <!-- 高斯模糊 -->
+                    <div class="adjust-slider-item">
+                      <div class="adjust-slider-label">
+                        <span>🌫️ 高斯模糊</span>
+                        <em :class="{ 'is-modified': imageAdjustments.blur > 0 }">
+                          {{ imageAdjustments.blur }}%
+                        </em>
+                      </div>
+                      <input
+                        v-model.number="imageAdjustments.blur"
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="1"
+                        class="effect-range-slider"
+                        title="双击归零 (FFmpeg gblur 柔焦模糊)"
+                        @dblclick="imageAdjustments.blur = 0"
+                      />
+                    </div>
+
+                    <!-- 色相偏移 -->
+                    <div class="adjust-slider-item">
+                      <div class="adjust-slider-label">
+                        <span>🌈 色相偏移</span>
+                        <em :class="{ 'is-modified': imageAdjustments.hue !== 0 }">
+                          {{ imageAdjustments.hue > 0 ? `+${imageAdjustments.hue}°` : `${imageAdjustments.hue}°` }}
+                        </em>
+                      </div>
+                      <input
+                        v-model.number="imageAdjustments.hue"
+                        type="range"
+                        min="-180"
+                        max="180"
+                        step="5"
+                        class="effect-range-slider"
+                        title="双击归零 (FFmpeg hue 色相旋转)"
+                        @dblclick="imageAdjustments.hue = 0"
+                      />
+                    </div>
+                  </div>
+
+                  <!-- 电影感暗角开关 -->
+                  <div class="vignette-toggle-bar">
+                    <label class="mini-toggle-row">
+                      <input v-model="imageAdjustments.vignette" type="checkbox" />
+                      <span class="toggle-ui mini-ui"></span>
+                      <span>🎬 电影感光学暗角 (Vignette 四周柔化聚光)</span>
+                    </label>
                   </div>
                 </div>
               </div>

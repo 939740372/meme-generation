@@ -61,6 +61,15 @@ export interface StudioDraft {
   quality: "low" | "medium" | "high";
   format: "gif" | "webp" | "avif" | "mp4";
   videoFilter?: string;
+  imageAdjustments?: {
+    brightness?: number;
+    contrast?: number;
+    saturation?: number;
+    sharpen?: number;
+    blur?: number;
+    hue?: number;
+    vignette?: boolean;
+  } | null;
   includeAudio?: boolean;
   hwAccel?: "auto" | "disabled";
   selectedPresetId: string;
