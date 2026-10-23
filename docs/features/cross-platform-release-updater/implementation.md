@@ -1,6 +1,6 @@
 # 跨平台自动化构建、Windows 加固与远程更新检查实现与测试文档 (Implementation)
 
-- **状态**: ready-to-merge
+- **状态**: merged
 - **分支**: `feature/cross-platform-release-updater`
 - **日期**: 2026-10-23
 

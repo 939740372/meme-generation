@@ -65,7 +65,7 @@
 - [x] 极简创作工作台布局重构（告别冗余侧边栏与纵向参数大杂烩，采用三段式工作台与四分栏按需属性面板，详见 docs/features/clean-studio-layout/）
 - [x] 文字与贴纸叠加渲染全链路修复（修复现代 macOS 中文字体探测缺失导致的方框乱码、修复源视频坐标系到输出缩放帧的等比映射与裁切偏移计算、优化文字与贴纸自动启用交互，详见 docs/features/text-sticker-gif-render/）
 - [x] 全帧画质精修与色彩调节（支持所有视频帧统一调节亮度、对比度、饱和度、5×5 矩阵锐化、高斯模糊、色相偏移与电影感暗角，内置 5 款一键精修预设并支持画布 SVG 卷积锐化实时预览，详见 docs/features/frame-image-adjustments/）
-- [ ] 跨平台安装包和自动更新
+- [x] 跨平台安装包和自动更新（新增 GitHub Actions Windows .exe/.msi 与 macOS .dmg 自动构建及 Release 发布流水线、Windows 子进程 CREATE_NO_WINDOW 防黑框与字体路径兼容加固、内置 GitHub Releases 远程更新检查与一键下载引导，详见 docs/features/cross-platform-release-updater/）
 
 ## 暂不纳入当前范围
 
