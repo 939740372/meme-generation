@@ -67,7 +67,8 @@ async function downloadFile(url, dest) {
 function extractZip(zipPath, outDir) {
   console.log(`Extracting ${zipPath}...`);
   if (process.platform === 'win32') {
-    execFileSync('powershell', ['-NoProfile', '-Command', `Expand-Archive -Path '${zipPath}' -DestinationPath '${outDir}' -Force`]);
+    fs.mkdirSync(outDir, { recursive: true });
+    execFileSync('tar.exe', ['-xf', zipPath, '-C', outDir], { stdio: 'inherit' });
   } else {
     execFileSync('unzip', ['-o', zipPath, '-d', outDir]);
   }
